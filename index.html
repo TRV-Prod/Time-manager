@@ -204,6 +204,9 @@ tr:hover td{background:var(--slate-ll)}
 .schimb-card:hover{border-color:var(--orange-d)}
 .schimb-color-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
 .sarb-row{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r2);background:var(--card);margin-bottom:5px}
+.org-tip-btn{padding:7px 13px;border:1.5px solid var(--border);border-radius:var(--r2);background:var(--card);color:var(--text2);cursor:pointer;font-size:13px;font-weight:500;transition:.15s}
+.org-tip-btn:hover{border-color:var(--orange);background:var(--orange-l);color:var(--orange-d)}
+.org-tip-btn.active{border-color:var(--orange);background:var(--orange);color:#fff;box-shadow:0 2px 8px rgba(232,97,10,.3)}
 .sarb-date{font-size:12px;font-weight:700;color:var(--amber);min-width:90px}
 .sarb-name{font-size:13px;flex:1;margin:0 12px}
 
@@ -539,67 +542,107 @@ tr:hover td{background:var(--slate-ll)}
 
 <!-- MODAL NOD ORGANIGRAMĂ -->
 <div class="modal-bg" id="modal-org">
-  <div class="modal">
+  <div class="modal" style="max-width:580px">
     <div class="modal-header">
       <div class="modal-header-icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
-      <div class="modal-title" id="modal-org-title">Nod nou</div>
+      <div class="modal-title" id="modal-org-title">Adaugă în organigramă</div>
       <button class="modal-close" onclick="closeModal('modal-org')">✕</button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="org-id"/>
-      <div class="form-row">
-        <div class="form-group"><label class="form-label">Tip nod</label>
-          <select id="org-tip" class="form-control" onchange="toggleAngajatFields()">
-            <option value="director">Director</option>
-            <option value="manager_dep">Manager Departament</option>
-            <option value="manager">Manager</option>
-            <option value="sectie">Secție</option>
-            <option value="sef_formatie">Șef Formație</option>
-            <option value="workcenter">Workcenter</option>
-            <option value="angajat">Angajat</option>
-          </select>
+
+      <!-- Tip nod — butoane vizuale -->
+      <div class="form-group">
+        <label class="form-label">Tip nod</label>
+        <div id="org-tip-buttons" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+          <button type="button" class="org-tip-btn" data-tip="director" onclick="selectOrgTip('director')">👑 Director</button>
+          <button type="button" class="org-tip-btn" data-tip="manager_dep" onclick="selectOrgTip('manager_dep')">🏢 Manager Departament</button>
+          <button type="button" class="org-tip-btn" data-tip="manager" onclick="selectOrgTip('manager')">👔 Manager Secție</button>
+          <button type="button" class="org-tip-btn" data-tip="sef_formatie" onclick="selectOrgTip('sef_formatie')">⚙️ Șef Formație</button>
+          <button type="button" class="org-tip-btn" data-tip="angajat" onclick="selectOrgTip('angajat')">👤 Angajat</button>
         </div>
-        <div class="form-group"><label class="form-label">Nod părinte</label>
-          <select id="org-parent" class="form-control"><option value="">— Rădăcină —</option></select>
+        <input type="hidden" id="org-tip" value="angajat"/>
+      </div>
+
+      <!-- Nod părinte -->
+      <div class="form-group">
+        <label class="form-label">Subordonat la <span style="font-weight:400;text-transform:none;font-size:11px;color:var(--text3)">(lasă gol pentru rădăcină)</span></label>
+        <select id="org-parent" class="form-control">
+          <option value="">— Rădăcină (nivel maxim) —</option>
+        </select>
+      </div>
+
+      <hr class="divider"/>
+
+      <!-- Câmpuri comune -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Nume <span id="org-nume-hint" style="font-weight:400;text-transform:none;font-size:11px;color:var(--text3)"></span></label>
+          <input id="ang-nume-fam" class="form-control" placeholder="ex: Popescu"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Prenume <span id="org-prenume-hint" style="font-weight:400;text-transform:none;font-size:11px;color:var(--text3)">(pentru angajat)</span></label>
+          <input id="ang-prenume" class="form-control" placeholder="ex: Ion"/>
         </div>
       </div>
-      <div class="form-group"><label class="form-label">Nume</label><input id="org-nume" class="form-control" placeholder="ex: Secția Mecanică"/></div>
-      <div id="angajat-fields" style="display:none">
-        <hr class="divider"/>
-        <div style="font-size:12px;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">Date angajat</div>
+
+      <div class="form-group">
+        <label class="form-label">Funcție / Denumire post</label>
+        <input id="ang-functie" class="form-control" placeholder="ex: Operator CNC, Director General, Manager Producție..."/>
+      </div>
+
+      <!-- Câmpuri extra doar pentru angajat -->
+      <div id="angajat-extra" style="display:none">
         <div class="form-row">
-          <div class="form-group"><label class="form-label">Prenume</label><input id="ang-prenume" class="form-control" placeholder="Ion"/></div>
-          <div class="form-group"><label class="form-label">Nume</label><input id="ang-nume-fam" class="form-control" placeholder="Popescu"/></div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label class="form-label">Nr. matricol</label><input id="ang-nr-mat" class="form-control" placeholder="MAT-001"/></div>
-          <div class="form-group"><label class="form-label">Funcție</label><input id="ang-functie" class="form-control" placeholder="Operator CNC"/></div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label class="form-label">Schimb</label>
+          <div class="form-group">
+            <label class="form-label">Nr. matricol</label>
+            <input id="ang-nr-mat" class="form-control" placeholder="ex: MAT-001"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Schimb</label>
             <select id="ang-schimb" class="form-control"><option value="">— nealocat —</option></select>
           </div>
-          <div class="form-group"><label class="form-label">Data angajare</label><input id="ang-data-ang" class="form-control" type="date"/></div>
         </div>
-        <hr class="divider"/>
-        <div style="font-size:12px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">Cont de acces (opțional)</div>
+        <div class="form-group">
+          <label class="form-label">Data angajare</label>
+          <input id="ang-data-ang" class="form-control" type="date"/>
+        </div>
+      </div>
+
+      <!-- Cont acces -->
+      <div class="divider"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+        <div style="font-size:12px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.05em">Cont de acces aplicație</div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="ang-create-cont" onchange="toggleContFields()" style="width:15px;height:15px;accent-color:var(--orange)"/>
+          Creează cont
+        </label>
+      </div>
+      <div id="cont-fields" style="display:none">
         <div class="form-row">
-          <div class="form-group"><label class="form-label">Username <span style="font-weight:400;text-transform:none;color:var(--text3)">(ex: ion.popescu)</span></label><input id="ang-username" class="form-control" placeholder="ion.popescu"/></div>
-          <div class="form-group"><label class="form-label">Parolă</label><input id="ang-pass" class="form-control" type="password" placeholder="••••••••"/></div>
+          <div class="form-group">
+            <label class="form-label">Username <span style="font-weight:400;text-transform:none;color:var(--text3)">(pentru login)</span></label>
+            <input id="ang-username" class="form-control" placeholder="ex: ion.popescu"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Parolă inițială</label>
+            <input id="ang-pass" class="form-control" type="password" placeholder="min. 6 caractere"/>
+          </div>
         </div>
-        <div class="form-group"><label class="form-label">Rol cont</label>
+        <div class="form-group">
+          <label class="form-label">Rol în aplicație</label>
           <select id="ang-rol" class="form-control">
-            <option value="user">Utilizator — vede doar pontajul propriu</option>
-            <option value="admin">Administrator — vede secția sa</option>
-            <option value="developer">Developer — acces total</option>
+            <option value="user">👤 Utilizator — vede doar pontajul propriu</option>
+            <option value="admin">🔧 Administrator — gestionează secția sa</option>
+            <option value="developer">⚡ Developer — acces total</option>
           </select>
         </div>
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-danger btn-sm" id="org-del-btn" onclick="deleteOrgNode()" style="display:none;margin-right:auto">Șterge nod</button>
+      <button class="btn btn-danger btn-sm" id="org-del-btn" onclick="deleteOrgNode()" style="display:none;margin-right:auto">🗑 Șterge</button>
       <button class="btn" onclick="closeModal('modal-org')">Anulează</button>
-      <button class="btn btn-primary" onclick="saveOrgNode()">Salvează</button>
+      <button class="btn btn-primary" onclick="saveOrgNode()">💾 Salvează</button>
     </div>
   </div>
 </div>
@@ -1500,20 +1543,31 @@ function renderAngajatDetail(nodeId){
 
 function openOrgModal(id,parentId){
   editingOrgId=id||null;
-  document.getElementById('modal-org-title').textContent=id?'Editare nod':'Nod nou';
+  document.getElementById('modal-org-title').textContent=id?'Editare nod organigramă':'Adaugă în organigramă';
   document.getElementById('org-del-btn').style.display=id?'inline-flex':'none';
   document.getElementById('org-id').value=id||'';
   const node=id?allOrgNodes.find(n=>n.id===id):null;
-  const ang=node?allAngajati.find(a=>a.org_node_id===node.id):null;
-  document.getElementById('org-tip').value=node?.tip||'sectie';
-  document.getElementById('org-nume').value=node?.nume||'';
-  // Parent select
+  const ang=node&&node.tip==='angajat'?allAngajati.find(a=>a.org_node_id===node.id):null;
+
+  // Tip nod
+  const tip=node?.tip||'angajat';
+  selectOrgTip(tip);
+
+  // Parent select - afișează ierarhia
   const pSel=document.getElementById('org-parent');
-  pSel.innerHTML='<option value="">— Rădăcină —</option>'+allOrgNodes.filter(n=>n.id!==id).map(n=>`<option value="${n.id}">${ORG_TIP_ICONS[n.tip]} ${n.nume}</option>`).join('');
+  pSel.innerHTML='<option value="">— Rădăcină (nivel maxim) —</option>';
+  allOrgNodes.filter(n=>n.id!==id).forEach(n=>{
+    const depth=getNodeDepth(n.id);
+    const indent='　'.repeat(depth);
+    pSel.innerHTML+=`<option value="${n.id}">${indent}${ORG_TIP_ICONS[n.tip]||''} ${n.nume} <span style="color:var(--text3)">[${ORG_TIP_LABELS[n.tip]}]</span></option>`;
+  });
   pSel.value=node?.parent_id||(parentId||'');
+
   // Schimburi
   const sSel=document.getElementById('ang-schimb');
-  sSel.innerHTML='<option value="">— nealocat —</option>'+allSchimburi.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
+  sSel.innerHTML='<option value="">— nealocat —</option>'+allSchimburi.map(s=>`<option value="${s.id}">${s.nume} (${s.ora_start||''}–${s.ora_sfarsit||''})</option>`).join('');
+
+  // Date angajat / nod
   if(ang){
     document.getElementById('ang-prenume').value=ang.prenume||'';
     document.getElementById('ang-nume-fam').value=ang.nume||'';
@@ -1522,49 +1576,88 @@ function openOrgModal(id,parentId){
     document.getElementById('ang-schimb').value=ang.schimb_id||'';
     document.getElementById('ang-data-ang').value=ang.data_angajare||'';
     const user=allProfiles.find(p=>p.angajat_id===ang.id);
-    document.getElementById('ang-username').value=user?.username||'';
-    document.getElementById('ang-pass').value='';
-    document.getElementById('ang-rol').value=user?.role||'user';
+    if(user){
+      document.getElementById('ang-create-cont').checked=true;
+      toggleContFields();
+      document.getElementById('ang-username').value=user.username||'';
+      document.getElementById('ang-pass').value='';
+      document.getElementById('ang-rol').value=user.role||'user';
+    } else {
+      document.getElementById('ang-create-cont').checked=false;
+      toggleContFields();
+    }
+  } else if(node){
+    // Nod non-angajat: pune numele în câmpul Nume
+    document.getElementById('ang-nume-fam').value=node.nume||'';
+    document.getElementById('ang-prenume').value='';
+    document.getElementById('ang-functie').value='';
+    document.getElementById('ang-create-cont').checked=false;
+    toggleContFields();
   } else {
     ['ang-prenume','ang-nume-fam','ang-nr-mat','ang-functie','ang-username','ang-pass'].forEach(x=>document.getElementById(x).value='');
-    document.getElementById('ang-schimb').value='';document.getElementById('ang-data-ang').value='';
-    document.getElementById('ang-rol').value='user';
+    document.getElementById('ang-schimb').value='';
+    document.getElementById('ang-data-ang').value='';
+    document.getElementById('ang-create-cont').checked=false;
+    toggleContFields();
   }
-  toggleAngajatFields();
   openModal('modal-org');
 }
+
+function getNodeDepth(id,depth=0){
+  const node=allOrgNodes.find(n=>n.id===id);
+  if(!node||!node.parent_id) return depth;
+  return getNodeDepth(node.parent_id,depth+1);
+}
+function selectOrgTip(tip){
+  document.getElementById('org-tip').value=tip;
+  document.querySelectorAll('.org-tip-btn').forEach(b=>b.classList.toggle('active',b.dataset.tip===tip));
+  // Câmpuri extra doar pt angajat
+  document.getElementById('angajat-extra').style.display=tip==='angajat'?'block':'none';
+  // Hint pentru câmpul Nume
+  const hints={director:'(ex: Departament Producție)',manager_dep:'(ex: Departament Mecanic)',manager:'(ex: Secția Sudură)',sef_formatie:'(ex: Formația 1)',angajat:'— obligatoriu'};
+  document.getElementById('org-nume-hint').textContent=hints[tip]||'';
+  document.getElementById('org-prenume-hint').textContent=tip==='angajat'?'— obligatoriu':'(opțional)';
+}
 function toggleAngajatFields(){
-  const tip=document.getElementById('org-tip').value;
-  document.getElementById('angajat-fields').style.display=tip==='angajat'?'block':'none';
-  if(tip==='angajat'&&!document.getElementById('org-nume').value){
-    // auto-gen name din prenume+nume
-    const p=document.getElementById('ang-prenume').value;const n=document.getElementById('ang-nume-fam').value;
-    if(p||n) document.getElementById('org-nume').value=p+' '+n;
-  }
+  // păstrat pentru compatibilitate
+  selectOrgTip(document.getElementById('org-tip').value||'angajat');
+}
+function toggleContFields(){
+  const show=document.getElementById('ang-create-cont').checked;
+  document.getElementById('cont-fields').style.display=show?'block':'none';
 }
 async function saveOrgNode(){
   const tip=document.getElementById('org-tip').value;
-  let nume=document.getElementById('org-nume').value.trim();
+  if(!tip){toast('Selectează tipul nodului','error');return;}
   const parent_id=document.getElementById('org-parent').value||null;
+  const prenume=document.getElementById('ang-prenume').value.trim();
+  const numeFam=document.getElementById('ang-nume-fam').value.trim();
+  const functie=document.getElementById('ang-functie').value.trim()||null;
+
+  // Compunem numele nodului
+  let nume='';
   if(tip==='angajat'){
-    const prenume=document.getElementById('ang-prenume').value.trim();
-    const numeFam=document.getElementById('ang-nume-fam').value.trim();
-    if(!prenume||!numeFam){toast('Completează prenumele și numele','error');return;}
-    nume=prenume+' '+numeFam;
+    if(!numeFam){toast('Completează numele angajatului','error');return;}
+    nume=(prenume+' '+numeFam).trim();
+  } else {
+    // Pentru noduri non-angajat: Nume = câmpul Nume (ang-nume-fam)
+    nume=numeFam||prenume;
+    if(!nume){toast('Completează denumirea','error');return;}
   }
-  if(!nume){toast('Completează numele','error');return;}
+
   let nodeId=editingOrgId;
   if(nodeId){
-    await sb.from('org_nodes').update({tip,nume,parent_id}).eq('id',nodeId);
+    const {error}=await sb.from('org_nodes').update({tip,nume,parent_id}).eq('id',nodeId);
+    if(error){toast('Eroare: '+error.message,'error');return;}
   } else {
-    const {data}=await sb.from('org_nodes').insert({tip,nume,parent_id}).select().single();
+    const {data,error}=await sb.from('org_nodes').insert({tip,nume,parent_id}).select().single();
+    if(error){toast('Eroare: '+error.message,'error');return;}
     nodeId=data?.id;
   }
+
+  // Dacă e angajat — salvăm și datele angajatului
   if(tip==='angajat'&&nodeId){
-    const prenume=document.getElementById('ang-prenume').value.trim();
-    const numeFam=document.getElementById('ang-nume-fam').value.trim();
     const nr_matricol=document.getElementById('ang-nr-mat').value.trim()||null;
-    const functie=document.getElementById('ang-functie').value.trim()||null;
     const schimb_id=document.getElementById('ang-schimb').value||null;
     const data_angajare=document.getElementById('ang-data-ang').value||null;
     const existingAng=allAngajati.find(a=>a.org_node_id===nodeId);
@@ -1576,18 +1669,25 @@ async function saveOrgNode(){
       const {data}=await sb.from('angajati').insert({org_node_id:nodeId,prenume,nume:numeFam,nr_matricol,functie,schimb_id,data_angajare,activ:true}).select().single();
       angId=data?.id;
     }
-    // Cont utilizator opțional
-    const username=document.getElementById('ang-username').value.trim().toLowerCase();
-    const pass=document.getElementById('ang-pass').value;
-    const rol=document.getElementById('ang-rol').value;
-    if(username&&pass&&angId){
-      const email=username+'@pontaj.intern';
-      const {data:rpc}=await sb.rpc('admin_create_user',{p_email:email,p_password:pass,p_username:username,p_full_name:prenume+' '+numeFam,p_role:rol,p_angajat_id:angId});
-      if(rpc&&!rpc.success) toast('Eroare cont: '+rpc.error,'warn');
-      else if(username) toast('Cont creat: '+username,'success');
+    // Cont utilizator — doar dacă checkbox-ul e bifat
+    const createCont=document.getElementById('ang-create-cont').checked;
+    if(createCont&&angId){
+      const username=document.getElementById('ang-username').value.trim().toLowerCase().replace(/\s+/g,'.');
+      const pass=document.getElementById('ang-pass').value;
+      const rol=document.getElementById('ang-rol').value;
+      if(!username||!pass){toast('Completează username și parola pentru cont','error');return;}
+      const {data:rpc,error:rpcErr}=await sb.rpc('admin_create_user',{
+        p_email:username+'@pontaj.intern',p_password:pass,
+        p_username:username,p_full_name:(prenume+' '+numeFam).trim(),
+        p_role:rol,p_angajat_id:angId
+      });
+      if(rpcErr||!rpc?.success) toast('Profil salvat, eroare cont: '+(rpcErr?.message||rpc?.error),'warn');
+      else toast('Cont creat pentru '+username+'!','success');
     }
   }
-  toast('Salvat!','success');closeModal('modal-org');
+
+  toast((tip==='angajat'?'Angajat':'Nod')+' salvat cu succes!','success');
+  closeModal('modal-org');
   await Promise.all([loadOrgNodes(),loadAngajati(),loadProfiles()]);
   renderOrgTree();
 }
