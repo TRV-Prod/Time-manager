@@ -1675,11 +1675,21 @@ function selectOrgTip(tip){
   document.getElementById('org-tip').value=tip;
   document.querySelectorAll('.org-tip-btn').forEach(b=>b.classList.toggle('active',b.dataset.tip===tip));
   // Câmpuri extra doar pt angajat
-  document.getElementById('angajat-extra').style.display=tip==='angajat'?'block':'none';
-  // Hint pentru câmpul Nume
-  const hints={director:'(ex: Departament Producție)',manager_dep:'(ex: Departament Mecanic)',manager:'(ex: Secția Sudură)',sef_formatie:'(ex: Formația 1)',angajat:'— obligatoriu'};
-  document.getElementById('org-nume-hint').textContent=hints[tip]||'';
-  document.getElementById('org-prenume-hint').textContent=tip==='angajat'?'— obligatoriu':'(opțional)';
+  const extraEl=document.getElementById('angajat-extra');
+  if(extraEl) extraEl.style.display=tip==='angajat'?'block':'none';
+  // Placeholder dinamic pentru câmpul Prenume/Nume
+  const preEl=document.getElementById('ang-prenume');
+  const numEl=document.getElementById('ang-nume-fam');
+  const placeholders={
+    director:['Director','General, ex: Ion Popescu'],
+    manager_dep:['Manager','Departament, ex: Ion Popescu'],
+    manager:['Manager','Secție, ex: Ion Popescu'],
+    sef_formatie:['Șef','Formație, ex: Ion Popescu'],
+    angajat:['Prenume','Nume familie']
+  };
+  const [ph1,ph2]=placeholders[tip]||['Prenume','Nume'];
+  if(preEl) preEl.placeholder=ph1;
+  if(numEl) numEl.placeholder=ph2;
 }
 function toggleAngajatFields(){
   // păstrat pentru compatibilitate
