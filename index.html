@@ -440,12 +440,16 @@ tr:hover td{background:var(--slate-ll)}
 
       <!-- UTILIZATORI -->
       <div class="page" id="page-utilizatori">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+        <div id="util-self-banner" style="display:none;margin-bottom:1rem"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
           <input id="util-search" class="form-control" style="width:260px" placeholder="Caută utilizator..." oninput="renderUtilizatori()"/>
-          <button class="btn btn-primary" onclick="openUtilizatorModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Utilizator nou</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm" onclick="refreshProfiles()" title="Reîncarcă lista"><svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reîncarcă</button>
+            <button class="btn btn-primary" onclick="openUtilizatorModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Utilizator nou</button>
+          </div>
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Utilizator</th><th>Rol</th><th>Angajat asociat</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Utilizator</th><th>Rol</th><th>Angajat asociat</th><th>Status</th><th>Acțiuni</th></tr></thead>
           <tbody id="util-tbody"></tbody>
         </table></div>
       </div>
@@ -940,7 +944,7 @@ function saveSetup(){
 function showSetup(){hide('app');hide('login-page');show('setup-screen');}
 function show(id){document.getElementById(id).style.display='flex';}
 function hide(id){document.getElementById(id).style.display='none';}
-function showApp(){hide('setup-screen');hide('login-page');document.getElementById('app').style.display='block';buildSidebarNav();loadAll();showPage('dashboard');}
+function showApp(){hide('setup-screen');hide('login-page');document.getElementById('app').style.display='block';loadAll().then(()=>{buildSidebarNav();showPage('dashboard');});}
 function showLogin(){hide('setup-screen');hide('app');document.getElementById('login-page').style.display='flex';}
 
 function initSupabase(url,key){
@@ -964,9 +968,17 @@ async function checkSession(){
 }
 async function loadCurrentUser(user){
   currentUser=user;
-  const {data}=await sb.from('profiles').select('*').eq('id',user.id).single();
-  currentProfile=data||{id:user.id,username:user.email.split('@')[0],full_name:user.email,role:'user',permissions:{}};
+  const {data,error}=await sb.from('profiles').select('*').eq('id',user.id).single();
+  if(error||!data){
+    // Profil lipsă - creăm unul local temporar
+    currentProfile={id:user.id,username:user.email.split('@')[0],full_name:user.email.split('@')[0],role:'user',permissions:{}};
+  } else {
+    currentProfile=data;
+    if(!currentProfile.permissions) currentProfile.permissions={};
+  }
+  console.log('Profil încărcat:',currentProfile.username,'rol:',currentProfile.role);
   updateSidebarUser();
+  buildSidebarNav();
 }
 function updateSidebarUser(){
   const p=currentProfile;
@@ -975,6 +987,21 @@ function updateSidebarUser(){
   document.getElementById('sb-name').textContent=p.full_name||p.username;
   const rl={developer:'Developer',admin:'Administrator',user:'Utilizator'};
   document.getElementById('sb-role').textContent=rl[p.role]||p.role;
+  // Banner avertizare rol greșit
+  let banner=document.getElementById('role-debug-banner');
+  if(!banner){banner=document.createElement('div');banner.id='role-debug-banner';document.body.prepend(banner);}
+  if(p.role==='user'){
+    banner.innerHTML='<div style="position:fixed;top:0;left:0;right:0;z-index:9999;background:#b06000;color:#fff;padding:8px 16px;font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+
+      '<span>⚠️ Contul <b>'+p.username+'</b> are rolul <b>user</b> — meniurile Admin nu sunt vizibile.</span>'+
+      '<code style="background:rgba(0,0,0,.3);padding:2px 8px;border-radius:4px;font-size:12px">UPDATE public.profiles SET role=\'developer\' WHERE username=\''+p.username+'\';'+
+      ' </code>'+
+      '<button onclick="doLogout()" style="background:#fff;color:#b06000;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-weight:600">Deconectare</button>'+
+      '</div>';
+    document.getElementById('main-content').style.marginTop='46px';
+  } else {
+    banner.innerHTML='';
+    const mc=document.getElementById('main-content');if(mc)mc.style.marginTop='';
+  }
 }
 async function doLogin(){
   const username=document.getElementById('login-user').value.trim().toLowerCase();
@@ -1678,16 +1705,43 @@ async function deleteSectie(){
 // ═══════════════════════════════════════════════
 // UTILIZATORI
 // ═══════════════════════════════════════════════
+async function refreshProfiles(){
+  await loadProfiles();
+  renderUtilizatori();
+  toast('Listă actualizată','success');
+}
 function renderUtilizatori(){
   const search=(document.getElementById('util-search')?.value||'').toLowerCase();
   let users=[...allProfiles];
   if(search) users=users.filter(u=>(u.full_name+' '+u.username).toLowerCase().includes(search));
   const rBadge={developer:'badge-purple',admin:'badge-orange',user:'badge-navy'};
   const rLabel={developer:'Developer',admin:'Admin',user:'Utilizator'};
+  // Banner info pentru contul curent dacă e user
+  const selfBanner=document.getElementById('util-self-banner');
+  if(selfBanner){
+    const self=allProfiles.find(p=>p.id===currentProfile.id);
+    if(self&&self.role==='user'){
+      selfBanner.style.display='block';
+      selfBanner.innerHTML=`<div class="alert alert-warn">
+        ⚠️ Contul tău (<b>${self.username}</b>) are rolul <b>Utilizator</b>. 
+        Ca să obții acces Developer, rulează în <b>Supabase → SQL Editor</b>:<br>
+        <code style="display:block;margin-top:6px;background:rgba(0,0,0,.08);padding:6px 10px;border-radius:4px;font-size:12px">UPDATE public.profiles SET role='developer' WHERE username='${self.username}';</code>
+        Apoi apasă <b>Deconectare</b> și loghează-te din nou.
+      </div>`;
+    } else if(selfBanner) selfBanner.style.display='none';
+  }
   document.getElementById('util-tbody').innerHTML=users.map(u=>{
     const ang=allAngajati.find(a=>a.id===u.angajat_id);
     const ini=(u.full_name||u.username||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
-    return `<tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ang-avatar" style="width:32px;height:32px;font-size:11px;background:var(--orange-l);color:var(--orange-d)">${ini}</div><div><div style="font-weight:500">${u.full_name}</div><div style="font-size:11px;color:var(--text3)">@${u.username}</div></div></div></td>
+    const isSelf=u.id===currentProfile?.id;
+    const avBg={developer:'var(--purple-l)',admin:'var(--orange-l)',user:'var(--navy-ll)'};
+    const avColor={developer:'var(--purple)',admin:'var(--orange-d)',user:'var(--navy)'};
+    return `<tr style="${isSelf?'background:var(--orange-l)':''}"}>
+      <td><div style="display:flex;align-items:center;gap:8px">
+        <div class="ang-avatar" style="width:32px;height:32px;font-size:11px;background:${avBg[u.role]||'var(--navy-ll)'};color:${avColor[u.role]||'var(--navy)'}">${ini}</div>
+        <div><div style="font-weight:500">${u.full_name}${isSelf?' <span style="font-size:10px;background:var(--orange);color:#fff;padding:1px 6px;border-radius:8px;font-weight:600">TU</span>':''}</div>
+        <div style="font-size:11px;color:var(--text3)">@${u.username}</div></div>
+      </div></td>
       <td><span class="badge ${rBadge[u.role]||'badge-navy'}">${rLabel[u.role]||u.role}</span></td>
       <td>${ang?ang.prenume+' '+ang.nume:'<span style="color:var(--text3)">—</span>'}</td>
       <td><span class="badge ${u.activ?'badge-green':'badge-red'}">${u.activ?'Activ':'Inactiv'}</span></td>
