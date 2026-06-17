@@ -1895,8 +1895,8 @@ function countSubAngajati(nodeId){
   let count=0;
   const children=allOrgNodes.filter(n=>n.parent_id===nodeId);
   for(const ch of children){
-    if(ch.tip==='angajat') count++;
-    else count+=countSubAngajati(ch.id);
+    if(allAngajati.some(a=>a.org_node_id===ch.id)) count++;
+    count+=countSubAngajati(ch.id);
   }
   return count;
 }
@@ -1909,23 +1909,22 @@ function countSubNoduri(nodeId){
 
 function renderOrgNode(node,depth=0){
   const children=allOrgNodes.filter(n=>n.parent_id===node.id);
-  const ang=node.tip==='angajat'?allAngajati.find(a=>a.org_node_id===node.id):null;
+  const ang=allAngajati.find(a=>a.org_node_id===node.id);
   const hasChildren=children.length>0;
   const isSelected=node.id===selectedOrgNodeId;
   const isAngajat=node.tip==='angajat';
 
-  // Etichetă principală
+  // Etichetă principală — orice nod cu date de persoană afișează numele complet
   let label='';
-  if(isAngajat&&ang){
+  if(ang){
     const ini=ang.initiala?ang.initiala+' ':'';
     label=`${ang.prenume} ${ini}${ang.nume}`;
   } else {
     label=node.nume;
   }
 
-  // Sub-text
-  let sub=ORG_TIP_LABELS[node.tip]||node.tip;
-  if(isAngajat&&ang?.functie) sub=ang.functie;
+  // Sub-text: funcția dacă există, altfel tipul nodului
+  let sub=ang?.functie||ORG_TIP_LABELS[node.tip]||node.tip;
 
   // Statistici pentru noduri non-angajat
   let stats='';
@@ -1975,7 +1974,7 @@ function renderAngajatDetail(nodeId){
   panel.innerHTML=`<div class="card">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:1.25rem">
       <div style="width:52px;height:52px;border-radius:50%;background:var(--orange-l);color:var(--orange-d);font-weight:700;font-size:18px;display:flex;align-items:center;justify-content:center">${ORG_TIP_ICONS[node.tip]||'📁'}</div>
-      <div><div style="font-size:16px;font-weight:700">${node.tip==='angajat'&&ang?(ang.prenume+(ang.initiala?' '+ang.initiala:'')+(ang.initiala?' ':' ')+ang.nume):node.nume}</div><div class="org-node-type" style="margin-top:2px">${ORG_TIP_LABELS[node.tip]}</div></div>
+      <div><div style="font-size:16px;font-weight:700">${ang?(ang.prenume+(ang.initiala?' '+ang.initiala:'')+' '+ang.nume):node.nume}</div><div class="org-node-type" style="margin-top:2px">${ORG_TIP_LABELS[node.tip]}</div></div>
     </div>
     ${ang?`<div class="grid-2" style="margin-bottom:1rem">
       <div><div class="form-label">Nr. matricol</div><div>${ang.nr_matricol||'—'}</div></div>
@@ -1999,7 +1998,7 @@ function openOrgModal(id,parentId){
   document.getElementById('org-del-btn').style.display=id?'inline-flex':'none';
   document.getElementById('org-id').value=id||'';
   const node=id?allOrgNodes.find(n=>n.id===id):null;
-  const ang=node&&node.tip==='angajat'?allAngajati.find(a=>a.org_node_id===node.id):null;
+  const ang=node?allAngajati.find(a=>a.org_node_id===node.id):null;
 
   // Tip nod
   const tip=node?.tip||'angajat';
@@ -2031,7 +2030,7 @@ function openOrgModal(id,parentId){
   schimbCoordSel.innerHTML='<option value="">— selectează schimbul —</option>'+allSchimburi.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
   schimbCoordSel.value=node?.schimb_id||'';
 
-  // Date angajat / nod
+  // Date persoană (Prenume/Nume/Funcție/Secție/Schimb/Cont) — la fel pentru orice tip de nod
   if(ang){
     document.getElementById('ang-prenume').value=ang.prenume||'';
     document.getElementById('ang-initiala').value=ang.initiala||'';
@@ -2042,49 +2041,38 @@ function openOrgModal(id,parentId){
     document.getElementById('ang-sectie').value=ang.sectie_id||'';
     document.getElementById('ang-data-ang').value=ang.data_angajare||'';
     document.getElementById('ang-zile-co').value=ang.zile_co||21;
-    const user=allProfiles.find(p=>p.angajat_id===ang.id);
-    if(user){
-      document.getElementById('ang-create-cont').checked=true;
-      toggleContFields();
-      document.getElementById('ang-username').value=user.username||'';
-      document.getElementById('ang-pass').value='';
-      document.getElementById('ang-rol').value=user.role||'user';
-    } else {
-      document.getElementById('ang-create-cont').checked=false;
-      toggleContFields();
-    }
   } else if(node){
-    // Nod non-angajat existent: pune numele/prenume separat dacă a fost salvat ca "Prenume Inițială Nume"
+    // Nod existent fără rând în angajati (creat înainte de această actualizare) — pune ce avem din nume
     document.getElementById('ang-nume-fam').value=node.nume||'';
     document.getElementById('ang-prenume').value='';
+    document.getElementById('ang-nr-mat').value='';
     document.getElementById('ang-functie').value='';
     document.getElementById('ang-schimb').value='';
     document.getElementById('ang-sectie').value='';
-    const user=allProfiles.find(p=>p.org_node_id===node.id);
-    if(user){
-      document.getElementById('ang-create-cont').checked=true;
-      document.getElementById('ang-username').value=user.username||'';
-      document.getElementById('ang-pass').value='';
-      document.getElementById('ang-rol').value=user.role||'user';
-    } else {
-      document.getElementById('ang-create-cont').checked=true;
-      document.getElementById('ang-username').value='';
-      document.getElementById('ang-pass').value='Team';
-      document.getElementById('ang-rol').value='user';
-    }
-    toggleContFields();
+    document.getElementById('ang-data-ang').value='';
+    document.getElementById('ang-zile-co').value=21;
   } else {
     ['ang-prenume','ang-nume-fam','ang-nr-mat','ang-functie'].forEach(x=>document.getElementById(x).value='');
     document.getElementById('ang-schimb').value='';
     document.getElementById('ang-sectie').value='';
     document.getElementById('ang-data-ang').value='';
     document.getElementById('ang-zile-co').value=21;
+  }
+
+  // Cont utilizator (căutat după angajat_id, dacă există)
+  const user=ang?allProfiles.find(p=>p.angajat_id===ang.id):null;
+  if(user){
+    document.getElementById('ang-create-cont').checked=true;
+    document.getElementById('ang-username').value=user.username||'';
+    document.getElementById('ang-pass').value='';
+    document.getElementById('ang-rol').value=user.role||'user';
+  } else {
+    document.getElementById('ang-create-cont').checked=true;
     document.getElementById('ang-username').value='';
     document.getElementById('ang-pass').value='Team';
     document.getElementById('ang-rol').value='user';
-    document.getElementById('ang-create-cont').checked=true;
-    toggleContFields();
   }
+  toggleContFields();
   openModal('modal-org');
 }
 
@@ -2144,9 +2132,10 @@ async function repropagaSubordonati(nodeId,sectieId,schimbId){
 function selectOrgTip(tip){
   document.getElementById('org-tip').value=tip;
   document.querySelectorAll('.org-tip-btn').forEach(b=>b.classList.toggle('active',b.dataset.tip===tip));
-  // Câmpuri extra doar pt angajat
+  // Câmpuri extra (matricol, secție, schimb, zile CO) - acum vizibile pentru toate tipurile,
+  // pentru că orice nod din organigramă reprezintă o persoană reală cu pontaj propriu
   const extraEl=document.getElementById('angajat-extra');
-  if(extraEl) extraEl.style.display=tip==='angajat'?'block':'none';
+  if(extraEl) extraEl.style.display='block';
   // Câmp Manager -> selector secție condusă
   const mgrField=document.getElementById('manager-sectie-field');
   if(mgrField) mgrField.style.display=tip==='manager'?'block':'none';
@@ -2234,19 +2223,22 @@ async function saveOrgNode(){
     await repropagaSubordonati(nodeId,undefined,nodeSchimbId);
   }
 
-  // Dacă e angajat — salvăm și datele angajatului, cu auto-repartizare secție/schimb din ascendenți
+  // Salvăm datele de angajat pentru ORICE tip de nod (Director, Manager, Șef Formație, Angajat) —
+  // toată lumea din organigramă e o persoană reală cu pontaj propriu
   let angId=null;
-  if(tip==='angajat'&&nodeId){
+  if(nodeId){
     const nr_matricol=document.getElementById('ang-nr-mat').value.trim()||null;
     const dataAngajare=document.getElementById('ang-data-ang').value||null;
     const zile_co=parseInt(document.getElementById('ang-zile-co').value)||21;
 
     // Secție/schimb: dacă userul a ales manual în dropdown, respectăm alegerea;
-    // altfel auto-completăm din ascendenții (Manager Secție -> secție, Șef Formație -> schimb)
+    // altfel auto-completăm din ascendenții (Manager Secție -> secție, Șef Formație -> schimb).
+    // Pentru un Manager, secția lui proprie (nodeSectieId) e folosită direct ca secție a propriului pontaj.
+    // Pentru un Șef Formație, schimbul lui propriu (nodeSchimbId) e folosit direct.
     let schimb_id=document.getElementById('ang-schimb').value||null;
     let sectie_id=document.getElementById('ang-sectie').value||null;
-    if(!sectie_id) sectie_id=findInheritedSectie(parent_id);
-    if(!schimb_id) schimb_id=findInheritedSchimb(parent_id);
+    if(!sectie_id) sectie_id=tip==='manager'?nodeSectieId:findInheritedSectie(parent_id);
+    if(!schimb_id) schimb_id=tip==='sef_formatie'?nodeSchimbId:findInheritedSchimb(parent_id);
 
     const existingAng=allAngajati.find(a=>a.org_node_id===nodeId);
     if(existingAng){
@@ -2258,18 +2250,14 @@ async function saveOrgNode(){
     }
   }
 
-  // Cont utilizator — disponibil pentru ORICE tip de nod (Director, Manager, Șef Formație, Angajat),
-  // doar dacă checkbox-ul e bifat
+  // Cont utilizator — disponibil pentru orice tip de nod, doar dacă checkbox-ul e bifat
   const createCont=document.getElementById('ang-create-cont').checked;
-  if(createCont&&nodeId){
+  if(createCont&&angId){
     const username=document.getElementById('ang-username').value.trim().toLowerCase().replace(/\s+/g,'.');
     const pass=document.getElementById('ang-pass').value;
     const rol=document.getElementById('ang-rol').value;
     if(!username||!pass){toast('Completează username și parola pentru cont','error');return;}
-    // Pentru angajat căutăm contul după angajat_id; pentru restul tipurilor, după org_node_id
-    const existingUser=tip==='angajat'
-      ?allProfiles.find(p=>p.angajat_id===angId)
-      :allProfiles.find(p=>p.org_node_id===nodeId);
+    const existingUser=allProfiles.find(p=>p.angajat_id===angId);
     if(existingUser){
       await sb.from('profiles').update({username,full_name:nume,role:rol}).eq('id',existingUser.id);
       if(pass) await sb.rpc('admin_set_password',{p_user_id:existingUser.id,p_password:pass});
@@ -2278,14 +2266,13 @@ async function saveOrgNode(){
       const {data:rpc,error:rpcErr}=await sb.rpc('admin_create_user',{
         p_email:username+'@pontaj.intern',p_password:pass,
         p_username:username,p_full_name:nume,
-        p_role:rol,p_angajat_id:tip==='angajat'?angId:null,
-        p_org_node_id:tip==='angajat'?null:nodeId
+        p_role:rol,p_angajat_id:angId
       });
       if(rpcErr||!rpc?.success) toast('Nod salvat, eroare cont: '+(rpcErr?.message||rpc?.error),'warn');
       else toast('Cont creat pentru '+username+'!','success');
     }
   } else {
-    toast((tip==='angajat'?'Angajat':'Nod')+' salvat cu succes!','success');
+    toast('Salvat cu succes!','success');
   }
 
   closeModal('modal-org');
