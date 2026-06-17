@@ -310,12 +310,12 @@ tr:hover td{background:var(--slate-ll)}
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Cereri invoiri
         <span class="nav-badge" id="nav-badge-invoiri" style="display:none">0</span>
       </div>
+      <div class="nav-item" data-page="calendar" onclick="showPage('calendar')">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/><line x1="16" y1="14" x2="16" y2="14"/></svg>Calendar
+      </div>
       <div class="sidebar-section" id="nav-section-admin" style="display:none">Administrare</div>
       <div class="nav-item" data-page="angajati" onclick="showPage('angajati')" id="nav-angajati" style="display:none">
         <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Angajați
-      </div>
-      <div class="nav-item" data-page="calendar" onclick="showPage('calendar')" id="nav-calendar" style="display:none">
-        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/><line x1="16" y1="14" x2="16" y2="14"/></svg>Calendar
       </div>
       <div class="nav-item" data-page="utilizatori" onclick="showPage('utilizatori')" id="nav-utilizatori" style="display:none">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/><line x1="19" y1="11" x2="19" y2="17"/><line x1="16" y1="14" x2="22" y2="14"/></svg>Utilizatori
@@ -373,9 +373,16 @@ tr:hover td{background:var(--slate-ll)}
             <button onclick="navPontaj(1)">›</button>
           </div>
           <button class="btn btn-sm" onclick="navToday()">Azi</button>
-          <select id="pont-angajat-sel" class="form-control" style="width:220px;display:none" onchange="refreshPontaj()"></select>
-          <select id="pont-sectie-sel" class="form-control" style="width:180px;display:none" onchange="refreshPontaj()"></select>
-          <button class="btn btn-sm" onclick="exportPontajCSV()"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
+        </div>
+        <div class="pont-controls" id="pont-filters" style="display:none">
+          <select id="pont-sectie-sel" class="form-control" style="width:180px" onchange="renderPontaj()"><option value="">Toate secțiile</option></select>
+          <input id="pont-search" class="form-control" style="width:220px" placeholder="🔍 Caută angajat..." oninput="renderPontaj()"/>
+          <div id="pont-selection-bar" style="display:none;align-items:center;gap:8px;background:var(--orange-l);padding:5px 10px;border-radius:var(--r2);border:1px solid var(--orange)">
+            <span id="pont-selection-count" style="font-size:12px;font-weight:600;color:var(--orange-d)">0 selectați</span>
+            <button class="btn btn-sm btn-primary" onclick="openPontajGroupModal()">✏️ Editează grup</button>
+            <button class="btn btn-sm btn-ghost" onclick="clearSelection()">Anulează</button>
+          </div>
+          <button class="btn btn-sm" onclick="exportPontajCSV()" style="margin-left:auto"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
         </div>
         <div id="pont-content"></div>
       </div>
@@ -383,11 +390,15 @@ tr:hover td{background:var(--slate-ll)}
       <!-- INVOIRI -->
       <div class="page" id="page-invoiri">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
-          <div style="display:flex;gap:6px">
-            <select id="inv-filter-status" class="form-control" style="width:160px" onchange="renderInvoiri()"><option value="">Toate</option><option value="pending">În așteptare</option><option value="aprobat">Aprobate</option><option value="refuzat">Refuzate</option></select>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <select id="inv-filter-status" class="form-control" style="width:150px" onchange="renderInvoiri()"><option value="">Toate statusurile</option><option value="pending">În așteptare</option><option value="aprobat">Aprobate</option><option value="refuzat">Refuzate</option></select>
+            <select id="inv-filter-tip" class="form-control" style="width:150px" onchange="renderInvoiri()"><option value="">Toate tipurile</option><option value="INV">Invoiri</option><option value="CO">Concedii Odihnă</option></select>
             <select id="inv-filter-ang" class="form-control" style="width:200px;display:none" onchange="renderInvoiri()"><option value="">Toți angajații</option></select>
           </div>
-          <button class="btn btn-primary" onclick="openInvoireModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Cerere nouă</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn" onclick="openInvoireModal('INV')"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Invoire nouă</button>
+            <button class="btn btn-primary" onclick="openInvoireModal('CO')"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Concediu nou</button>
+          </div>
         </div>
         <div id="invoiri-list"></div>
       </div>
@@ -419,18 +430,18 @@ tr:hover td{background:var(--slate-ll)}
           <div class="card">
             <div class="card-title"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Schimburi de lucru</div>
             <div id="schimburi-list"></div>
-            <button class="btn btn-sm btn-primary" style="margin-top:.75rem" onclick="openSchimbModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Schimb nou</button>
+            <button class="btn btn-sm btn-primary admin-only" style="margin-top:.75rem" onclick="openSchimbModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Schimb nou</button>
           </div>
           <div class="card">
             <div class="card-title" style="justify-content:space-between">
               <span style="display:flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Sărbători legale</span>
               <div style="display:flex;gap:6px">
                 <select id="sarb-an" class="form-control" style="width:90px" onchange="loadSarbatori(parseInt(this.value)).then(renderSarbatori)"></select>
-                <button class="btn btn-sm" onclick="importSarbatoriRO()">Import RO</button>
+                <button class="btn btn-sm admin-only" onclick="importSarbatoriRO()">Import RO</button>
               </div>
             </div>
             <div id="sarb-list"></div>
-            <div style="display:flex;gap:6px;margin-top:.75rem;flex-wrap:wrap">
+            <div class="admin-only" style="display:flex;gap:6px;margin-top:.75rem;flex-wrap:wrap">
               <input id="new-sarb-data" class="form-control" type="date" style="width:160px"/>
               <input id="new-sarb-name" class="form-control" placeholder="Denumire..." style="flex:1;min-width:150px"/>
               <button class="btn btn-success btn-sm" onclick="addSarbatoare()">Adaugă</button>
@@ -440,7 +451,7 @@ tr:hover td{background:var(--slate-ll)}
         <div class="card" style="margin-top:1rem">
           <div class="card-title"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Secții</div>
           <div class="grid-3" id="sectii-grid"></div>
-          <button class="btn btn-sm btn-primary" onclick="openSectieModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Secție nouă</button>
+          <button class="btn btn-sm btn-primary admin-only" onclick="openSectieModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Secție nouă</button>
         </div>
       </div>
 
@@ -473,24 +484,33 @@ tr:hover td{background:var(--slate-ll)}
       <button class="modal-close" onclick="closeModal('modal-pont')">✕</button>
     </div>
     <div class="modal-body">
-      <div class="form-row">
-        <div class="form-group"><label class="form-label">Tip prezență</label>
-          <select id="pont-tip" class="form-control" onchange="togglePontOre()">
-            <option value="P">✓ Prezent</option>
-            <option value="CO">Concediu Odihnă</option>
-            <option value="CM">Concediu Medical</option>
-            <option value="INV">Invoială</option>
-            <option value="CFP">Concediu Fără Plată</option>
-            <option value="AB">Absent nemotivat</option>
-          </select>
+      <div class="form-group"><label class="form-label">Tip prezență</label>
+        <select id="pont-tip" class="form-control" onchange="togglePontOre()">
+          <option value="P">✓ Prezent</option>
+          <option value="CO">Concediu Odihnă</option>
+          <option value="CM">Concediu Medical</option>
+          <option value="INV">Invoială</option>
+          <option value="CFP">Concediu Fără Plată</option>
+          <option value="AB">Absent nemotivat</option>
+        </select>
+      </div>
+      <div id="pont-mod-wrap">
+        <div class="form-group">
+          <label class="form-label">Mod introducere</label>
+          <input type="hidden" id="pont-mod" value="interval"/>
+          <div style="display:flex;gap:6px;margin-top:4px">
+            <button type="button" class="org-tip-btn" id="pont-mod-interval" onclick="setPontMod('interval')" style="flex:1">🕐 Interval orar</button>
+            <button type="button" class="org-tip-btn" id="pont-mod-ore" onclick="setPontMod('ore')" style="flex:1">📋 Nr. ore</button>
+          </div>
         </div>
-        <div class="form-group"><label class="form-label">Nr. ore</label>
+        <div id="pont-ore-row" class="form-row">
+          <div class="form-group"><label class="form-label">Ora intrare</label><input id="pont-ora-in" class="form-control" type="time" value="07:00" onchange="calcOreAuto()"/></div>
+          <div class="form-group"><label class="form-label">Ora ieșire</label><input id="pont-ora-out" class="form-control" type="time" value="15:30" onchange="calcOreAuto()"/></div>
+        </div>
+        <div id="pont-ore-simplu-row" class="form-group">
+          <label class="form-label">Nr. ore lucrate</label>
           <input id="pont-ore" class="form-control" type="number" min="0" max="24" step="0.5" placeholder="8"/>
         </div>
-      </div>
-      <div id="pont-ore-row" class="form-row">
-        <div class="form-group"><label class="form-label">Ora intrare</label><input id="pont-ora-in" class="form-control" type="time" value="07:00"/></div>
-        <div class="form-group"><label class="form-label">Ora ieșire</label><input id="pont-ora-out" class="form-control" type="time" value="15:30" onchange="calcOreAuto()"/></div>
       </div>
       <div class="form-group"><label class="form-label">Observații</label><input id="pont-obs" class="form-control" placeholder="Opțional..."/></div>
     </div>
@@ -502,26 +522,84 @@ tr:hover td{background:var(--slate-ll)}
   </div>
 </div>
 
+<!-- MODAL PONTAJ GRUP -->
+<div class="modal-bg" id="modal-pont-group">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-header-icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+      <div class="modal-title">Pontaj de grup</div>
+      <button class="modal-close" onclick="closeModal('modal-pont-group')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" id="group-pont-count">0 angajați selectați</div>
+      <div class="form-group"><label class="form-label">Data</label><input id="group-pont-data" class="form-control" type="date"/></div>
+      <div class="form-group"><label class="form-label">Tip prezență</label>
+        <select id="group-pont-tip" class="form-control" onchange="toggleGroupPontOre()">
+          <option value="P">✓ Prezent</option>
+          <option value="CO">Concediu Odihnă</option>
+          <option value="CM">Concediu Medical</option>
+          <option value="INV">Invoială</option>
+          <option value="CFP">Concediu Fără Plată</option>
+          <option value="AB">Absent nemotivat</option>
+        </select>
+      </div>
+      <div id="group-mod-wrap">
+        <div class="form-group">
+          <label class="form-label">Mod introducere</label>
+          <input type="hidden" id="group-pont-mod" value="interval"/>
+          <div style="display:flex;gap:6px;margin-top:4px">
+            <button type="button" class="org-tip-btn" id="group-mod-interval" onclick="setGroupPontMod('interval')" style="flex:1">🕐 Interval orar</button>
+            <button type="button" class="org-tip-btn" id="group-mod-ore" onclick="setGroupPontMod('ore')" style="flex:1">📋 Nr. ore</button>
+          </div>
+        </div>
+        <div id="group-pont-ore-row" class="form-row">
+          <div class="form-group"><label class="form-label">Ora intrare</label><input id="group-pont-ora-in" class="form-control" type="time" value="07:00"/></div>
+          <div class="form-group"><label class="form-label">Ora ieșire</label><input id="group-pont-ora-out" class="form-control" type="time" value="15:30"/></div>
+        </div>
+        <div id="group-pont-ore-simplu-row" class="form-group">
+          <label class="form-label">Nr. ore lucrate</label>
+          <input id="group-pont-ore" class="form-control" type="number" min="0" max="24" step="0.5" placeholder="8"/>
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">Observații</label><input id="group-pont-obs" class="form-control" placeholder="Opțional..."/></div>
+      <div class="alert alert-warn" style="margin-bottom:0">⚠️ Se va suprascrie pontajul existent pentru data selectată, pentru toți angajații din grup.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-pont-group')">Anulează</button>
+      <button class="btn btn-primary" onclick="saveGroupPontaj()">Salvează pentru tot grupul</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL INVOIERE -->
 <div class="modal-bg" id="modal-invoiere">
   <div class="modal">
     <div class="modal-header">
       <div class="modal-header-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-      <div class="modal-title">Cerere invoire</div>
+      <div class="modal-title" id="modal-invoiere-title">Cerere invoire</div>
       <button class="modal-close" onclick="closeModal('modal-invoiere')">✕</button>
     </div>
     <div class="modal-body">
-      <div class="form-row">
-        <div class="form-group"><label class="form-label">Data</label><input id="inv-data" class="form-control" type="date"/></div>
-        <div class="form-group"><label class="form-label">Angajat</label>
-          <select id="inv-angajat" class="form-control"></select>
-        </div>
+      <input type="hidden" id="inv-tip" value="INV"/>
+      <div style="display:flex;gap:6px;margin-bottom:1rem">
+        <button type="button" class="org-tip-btn" id="inv-tip-inv" onclick="setCerereTip('INV')" style="flex:1">🕐 Invoire</button>
+        <button type="button" class="org-tip-btn" id="inv-tip-co" onclick="setCerereTip('CO')" style="flex:1">📋 Concediu Odihnă</button>
+      </div>
+      <div class="form-group"><label class="form-label">Angajat</label>
+        <select id="inv-angajat" class="form-control"></select>
       </div>
       <div class="form-row">
+        <div class="form-group"><label class="form-label" id="inv-data-label">Data</label><input id="inv-data" class="form-control" type="date" onchange="updateCerereZileCalc()"/></div>
+        <div class="form-group" id="inv-data-sfarsit-group" style="display:none"><label class="form-label">Până la data</label><input id="inv-data-sfarsit" class="form-control" type="date" onchange="updateCerereZileCalc()"/></div>
+      </div>
+      <div id="inv-zile-calc-wrap" style="display:none;margin-bottom:1rem">
+        <span class="badge badge-navy" id="inv-zile-calc">0 zile lucrătoare</span>
+      </div>
+      <div id="inv-ore-row" class="form-row">
         <div class="form-group"><label class="form-label">De la ora</label><input id="inv-ora-start" class="form-control" type="time" value="08:00"/></div>
         <div class="form-group"><label class="form-label">Până la ora</label><input id="inv-ora-end" class="form-control" type="time" value="12:00"/></div>
       </div>
-      <div class="form-group"><label class="form-label">Motiv</label><textarea id="inv-motiv" class="form-control" rows="3" placeholder="Descrie motivul invoirii..."></textarea></div>
+      <div class="form-group"><label class="form-label">Motiv</label><textarea id="inv-motiv" class="form-control" rows="3" placeholder="Descrie motivul cererii..."></textarea></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-invoiere')">Anulează</button>
@@ -602,17 +680,27 @@ tr:hover td{background:var(--slate-ll)}
       <div id="angajat-extra" style="display:none">
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Nr. matricol</label>
-            <input id="ang-nr-mat" class="form-control" placeholder="ex: MAT-001"/>
+            <label class="form-label">Secție</label>
+            <select id="ang-sectie" class="form-control"><option value="">— nealocat —</option></select>
           </div>
           <div class="form-group">
             <label class="form-label">Schimb</label>
             <select id="ang-schimb" class="form-control"><option value="">— nealocat —</option></select>
           </div>
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Nr. matricol</label>
+            <input id="ang-nr-mat" class="form-control" placeholder="ex: MAT-001"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Data angajare</label>
+            <input id="ang-data-ang" class="form-control" type="date"/>
+          </div>
+        </div>
         <div class="form-group">
-          <label class="form-label">Data angajare</label>
-          <input id="ang-data-ang" class="form-control" type="date"/>
+          <label class="form-label">Zile CO / an</label>
+          <input id="ang-zile-co" class="form-control" type="number" min="0" max="60" value="21" style="max-width:120px"/>
         </div>
       </div>
 
@@ -665,12 +753,22 @@ tr:hover td{background:var(--slate-ll)}
     <div class="modal-body">
       <input type="hidden" id="schimb-id"/>
       <div class="form-group"><label class="form-label">Denumire</label><input id="schimb-nume" class="form-control" placeholder="ex: Schimb I"/></div>
-      <div class="form-row">
+
+      <div class="form-group">
+        <label class="form-label">Tip schimb</label>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <button type="button" class="org-tip-btn" id="schimb-tip-fixe" onclick="setSchimbTip(true)" style="flex:1">🕐 Interval orar fix</button>
+          <button type="button" class="org-tip-btn" id="schimb-tip-flex" onclick="setSchimbTip(false)" style="flex:1">📋 Doar ore lucrate</button>
+        </div>
+        <input type="hidden" id="schimb-ore-fixe" value="true"/>
+      </div>
+
+      <div id="schimb-interval-fields" class="form-row">
         <div class="form-group"><label class="form-label">Ora start</label><input id="schimb-start" class="form-control" type="time" value="06:00"/></div>
         <div class="form-group"><label class="form-label">Ora sfârșit</label><input id="schimb-end" class="form-control" type="time" value="14:00"/></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label class="form-label">Ore/zi</label><input id="schimb-ore" class="form-control" type="number" value="8" min="1" max="12"/></div>
+        <div class="form-group"><label class="form-label">Ore/zi standard</label><input id="schimb-ore" class="form-control" type="number" value="8" min="1" max="12" step="0.5"/></div>
         <div class="form-group"><label class="form-label">Culoare</label><input id="schimb-culoare" class="form-control" type="color" value="#1a7a4a"/></div>
       </div>
     </div>
@@ -781,12 +879,14 @@ create table if not exists public.org_nodes (
 create table if not exists public.angajati (
   id uuid primary key default uuid_generate_v4(),
   org_node_id uuid references public.org_nodes(id) on delete set null,
+  sectie_id uuid,
   nr_matricol text,
   prenume text not null,
   initiala text,
   nume text not null,
   functie text,
   schimb_id uuid,
+  zile_co integer default 21,
   data_angajare date,
   activ boolean default true,
   created_at timestamptz default now()
@@ -813,12 +913,13 @@ create table if not exists public.sectii (
   created_at timestamptz default now()
 );
 
--- Schimburi
+-- Schimburi (ore_fixe=true → interval orar definit; ore_fixe=false → doar ore lucrate, standard ore_zi)
 create table if not exists public.schimburi (
   id uuid primary key default uuid_generate_v4(),
   nume text not null,
-  ora_start time not null,
-  ora_sfarsit time not null,
+  ore_fixe boolean default true,
+  ora_start time,
+  ora_sfarsit time,
   ore_zi numeric(4,1) default 8,
   culoare text default '#1a7a4a',
   created_at timestamptz default now()
@@ -848,15 +949,19 @@ create table if not exists public.pontaj (
   unique(angajat_id, data)
 );
 
--- Cereri invoiri
-create table if not exists public.cereri_invoiri (
+-- Cereri (Invoiri sau Concediu Odihnă)
+create table if not exists public.cereri (
   id uuid primary key default uuid_generate_v4(),
   angajat_id uuid references public.angajati(id) on delete cascade,
-  data date not null,
-  ora_start time not null,
-  ora_sfarsit time not null,
+  tip text not null default 'INV' check (tip in ('INV','CO')),
+  data_start date not null,
+  data_sfarsit date not null,
+  ora_start time,
+  ora_sfarsit time,
+  zile_lucratoare integer,
   motiv text,
   status text not null default 'pending' check (status in ('pending','aprobat','refuzat')),
+  initiat_de uuid references public.profiles(id),
   admin_id uuid references public.profiles(id),
   mesaj_admin text,
   read_by_user boolean default false,
@@ -873,7 +978,7 @@ alter table public.sectii enable row level security;
 alter table public.schimburi enable row level security;
 alter table public.sarbatori_legale enable row level security;
 alter table public.pontaj enable row level security;
-alter table public.cereri_invoiri enable row level security;
+alter table public.cereri enable row level security;
 
 -- Policies generale
 create policy "select_all" on public.org_nodes for select using (true);
@@ -890,12 +995,12 @@ create policy "admin_all" on public.schimburi for all using (exists(select 1 fro
 create policy "select_all" on public.sarbatori_legale for select using (true);
 create policy "admin_all" on public.sarbatori_legale for all using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
 create policy "admin_select" on public.pontaj for select using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
-create policy "own_select" on public.pontaj for select using (angajat_id in (select id from public.angajati where org_node_id in (select id from public.org_nodes)));
+create policy "own_select" on public.pontaj for select using (angajat_id=(select angajat_id from public.profiles where id=auth.uid()));
 create policy "admin_all" on public.pontaj for all using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
-create policy "admin_select" on public.cereri_invoiri for select using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
-create policy "own_select" on public.cereri_invoiri for select using (angajat_id=(select angajat_id from public.profiles where id=auth.uid()));
-create policy "insert_own" on public.cereri_invoiri for insert with check (angajat_id=(select angajat_id from public.profiles where id=auth.uid()) or exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
-create policy "admin_update" on public.cereri_invoiri for update using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
+create policy "admin_select" on public.cereri for select using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
+create policy "own_select" on public.cereri for select using (angajat_id=(select angajat_id from public.profiles where id=auth.uid()));
+create policy "insert_own" on public.cereri for insert with check (angajat_id=(select angajat_id from public.profiles where id=auth.uid()) or exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
+create policy "admin_update" on public.cereri for update using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
 
 -- Trigger profil nou utilizator
 create or replace function public.handle_new_user()
@@ -959,6 +1064,32 @@ exception when others then return json_build_object('success',false,'error',SQLE
 end;$$;
 
 -- ============================================================
+-- MIGRARE pentru baze de date existente (rulează separat dacă ai deja tabelele)
+-- ============================================================
+alter table public.angajati add column if not exists sectie_id uuid;
+alter table public.angajati add column if not exists zile_co integer default 21;
+alter table public.schimburi add column if not exists ore_fixe boolean default true;
+alter table public.schimburi alter column ora_start drop not null;
+alter table public.schimburi alter column ora_sfarsit drop not null;
+
+-- Migrare cereri_invoiri -> cereri (dacă tabela veche există)
+do $$ begin
+  if exists(select 1 from information_schema.tables where table_schema='public' and table_name='cereri_invoiri')
+     and not exists(select 1 from information_schema.tables where table_schema='public' and table_name='cereri') then
+    alter table public.cereri_invoiri rename to cereri;
+    alter table public.cereri rename column data to data_start;
+    alter table public.cereri add column if not exists data_sfarsit date;
+    update public.cereri set data_sfarsit=data_start where data_sfarsit is null;
+    alter table public.cereri alter column data_sfarsit set not null;
+    alter table public.cereri add column if not exists tip text default 'INV';
+    alter table public.cereri add column if not exists zile_lucratoare integer;
+    alter table public.cereri add column if not exists initiat_de uuid references public.profiles(id);
+    alter table public.cereri alter column ora_start drop not null;
+    alter table public.cereri alter column ora_sfarsit drop not null;
+  end if;
+end $$;
+
+-- ============================================================
 -- CREARE UTILIZATOR INITIAL: marius.simion / TRV-2025 / developer
 -- ============================================================
 do $$ declare v_uid uuid := gen_random_uuid(); begin
@@ -975,7 +1106,7 @@ end $$;`;
 // ═══════════════════════════════════════════════
 const SB_URL_K='pontaj_sb_url', SB_KEY_K='pontaj_sb_key';
 let sb=null, currentUser=null, currentProfile=null;
-let allOrgNodes=[], allAngajati=[], allProfiles=[], allSectii=[], allSchimburi=[], allSarbatori=[], allPontaj=[], allInvoiri=[];
+let allOrgNodes=[], allAngajati=[], allProfiles=[], allSectii=[], allSchimburi=[], allSarbatori=[], allPontaj=[], allCereri=[];
 let pontajZoom='luna', pontajDate=new Date(), editingPontajAngajatId=null, editingPontajDate=null;
 let selectedOrgNodeId=null, editingOrgId=null, editingSchimbId=null, editingSectieId=null, editingUtilId=null;
 
@@ -1075,8 +1206,8 @@ function buildSidebarNav(){
   const isAd=isAdmin();
   document.getElementById('nav-section-admin').style.display=isAd?'block':'none';
   document.getElementById('nav-angajati').style.display=isAd?'flex':'none';
-  document.getElementById('nav-calendar').style.display=isAd?'flex':'none';
   document.getElementById('nav-utilizatori').style.display=isAd?'flex':'none';
+  document.querySelectorAll('.admin-only').forEach(el=>el.style.display=isAd?'':'none');
 }
 const PAGE_TITLES={dashboard:'Tablou de bord',pontaj:'Pontaj',invoiri:'Cereri invoiri',angajati:'Angajați',calendar:'Calendar',utilizatori:'Utilizatori'};
 const PAGE_SUBS={dashboard:'Bun venit!',pontaj:'Vizualizare și editare pontaj',invoiri:'Cereri de invoire',angajati:'Structură organizatorică',calendar:'Schimburi și sărbători legale',utilizatori:'Conturi și drepturi de acces'};
@@ -1115,16 +1246,16 @@ async function loadSectii(){const {data}=await sb.from('sectii').select('*').ord
 async function loadSchimburi(){const {data}=await sb.from('schimburi').select('*').order('ora_start');allSchimburi=data||[];}
 async function loadSarbatori(an){const {data}=await sb.from('sarbatori_legale').select('*').eq('an',an).order('data');allSarbatori=data||[];return allSarbatori;}
 async function loadInvoiri(){
-  let q=sb.from('cereri_invoiri').select('*').order('created_at',{ascending:false});
+  let q=sb.from('cereri').select('*').order('created_at',{ascending:false});
   if(!isAdmin()&&currentProfile?.angajat_id) q=q.eq('angajat_id',currentProfile.angajat_id);
-  const {data}=await q;allInvoiri=data||[];
+  const {data}=await q;allCereri=data||[];
 }
 async function loadPontajPeriod(angajatId,startDate,endDate){
   const {data}=await sb.from('pontaj').select('*').eq('angajat_id',angajatId).gte('data',startDate).lte('data',endDate);
   allPontaj=data||[];return allPontaj;
 }
 function updateBadges(){
-  const pending=allInvoiri.filter(i=>i.status==='pending'&&(isAdmin()?!i.read_by_admin:!i.read_by_user)).length;
+  const pending=allCereri.filter(i=>i.status==='pending'&&(isAdmin()?!i.read_by_admin:!i.read_by_user)).length;
   const badge=document.getElementById('nav-badge-invoiri');
   if(badge){badge.textContent=pending;badge.style.display=pending>0?'inline':'none';}
 }
@@ -1139,8 +1270,8 @@ async function renderDashboard(){
   
   const angTotal=allAngajati.filter(a=>a.activ).length;
   const utilTotal=allProfiles.length;
-  const pending=allInvoiri.filter(i=>i.status==='pending').length;
-  const aprobate=allInvoiri.filter(i=>i.status==='aprobat').length;
+  const pending=allCereri.filter(i=>i.status==='pending').length;
+  const aprobate=allCereri.filter(i=>i.status==='aprobat').length;
   
   document.getElementById('dash-stats').innerHTML=
     statCard('Angajați activi',angTotal,'#e8610a','var(--orange-l)','M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8')+
@@ -1167,10 +1298,10 @@ async function renderDashboard(){
   }
   document.getElementById('dash-pont-chart').innerHTML=chartHtml;
 
-  const recent=allInvoiri.slice(0,5);
+  const recent=allCereri.slice(0,5);
   document.getElementById('dash-cereri').innerHTML=recent.length?recent.map(i=>{
     const ang=allAngajati.find(a=>a.id===i.angajat_id);
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);gap:8px"><div><div style="font-size:13px;font-weight:500">${ang?angNume(ang):'—'}</div><div style="font-size:11px;color:var(--text3)">${fmtDate(i.data)} · ${i.ora_start||''} – ${i.ora_sfarsit||''}</div></div><span class="badge ${statusBadge(i.status)}">${statusLabel(i.status)}</span></div>`;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);gap:8px"><div><div style="font-size:13px;font-weight:500">${ang?angNume(ang):'—'}<span class="badge ${i.tip==='CO'?'badge-navy':'badge-purple'}" style="margin-left:6px;font-size:9px">${i.tip}</span></div><div style="font-size:11px;color:var(--text3)">${fmtDate(i.data_start)}${i.data_start!==i.data_sfarsit?' – '+fmtDate(i.data_sfarsit):''}${i.ora_start?' · '+i.ora_start.slice(0,5)+' – '+(i.ora_sfarsit||'').slice(0,5):''}</div></div><span class="badge ${statusBadge(i.status)}">${statusLabel(i.status)}</span></div>`;
   }).join(''):'<div style="color:var(--text3);font-size:13px;padding:.5rem 0">Nicio cerere recentă.</div>';
 }
 function statCard(label,val,color,bg,icon){
@@ -1180,18 +1311,21 @@ function statCard(label,val,color,bg,icon){
 // ═══════════════════════════════════════════════
 // PONTAJ
 // ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════
+// PONTAJ
+// ═══════════════════════════════════════════════
+let selectedAngajatiIds=new Set();
+
 function initPontaj(){
-  // Selector angajat pentru admin
-  const angSel=document.getElementById('pont-angajat-sel');
-  const sectSel=document.getElementById('pont-sectie-sel');
+  const filters=document.getElementById('pont-filters');
   if(isAdmin()){
-    angSel.style.display='block';
-    angSel.innerHTML='<option value="">— Alege angajat —</option>'+allAngajati.filter(a=>a.activ).map(a=>`<option value="${a.id}">${a.prenume} ${a.nume}</option>`).join('');
-    if(currentProfile?.angajat_id) angSel.value=currentProfile.angajat_id;
-    sectSel.style.display='block';
+    filters.style.display='flex';
+    const sectSel=document.getElementById('pont-sectie-sel');
     sectSel.innerHTML='<option value="">Toate secțiile</option>'+allSectii.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
+    document.getElementById('pont-search').value='';
+    selectedAngajatiIds.clear();
   } else {
-    angSel.style.display='none';sectSel.style.display='none';
+    filters.style.display='none';
   }
   setZoom('luna');
 }
@@ -1208,51 +1342,117 @@ function navPontaj(dir){
 }
 function navToday(){pontajDate=new Date();refreshPontaj();}
 
-async function refreshPontaj(){
-  const angSel=document.getElementById('pont-angajat-sel');
-  let angId=isAdmin()&&angSel.value?angSel.value:currentProfile?.angajat_id;
-  editingPontajAngajatId=angId;
+function getAngajatiFiltrati(){
+  let list=isAdmin()?allAngajati.filter(a=>a.activ):(currentProfile?.angajat_id?allAngajati.filter(a=>a.id===currentProfile.angajat_id):[]);
+  if(isAdmin()){
+    const sectFilt=document.getElementById('pont-sectie-sel')?.value;
+    const search=(document.getElementById('pont-search')?.value||'').toLowerCase().trim();
+    if(sectFilt) list=list.filter(a=>a.sectie_id===sectFilt);
+    if(search) list=list.filter(a=>angNume(a).toLowerCase().includes(search)||(a.functie||'').toLowerCase().includes(search));
+  }
+  return list;
+}
+
+function getPeriodRange(){
   const d=pontajDate,y=d.getFullYear(),m=d.getMonth(),day=d.getDate();
   let start,end,label;
   if(pontajZoom==='luna'){
     start=`${y}-${String(m+1).padStart(2,'0')}-01`;
     end=`${y}-${String(m+1).padStart(2,'0')}-${new Date(y,m+1,0).getDate()}`;
     label=['Ianuarie','Februarie','Martie','Aprilie','Mai','Iunie','Iulie','August','Septembrie','Octombrie','Noiembrie','Decembrie'][m]+' '+y;
-    await loadSarbatori(y);
   } else if(pontajZoom==='saptamana'){
     const dow=(d.getDay()+6)%7;
     const mon=new Date(d);mon.setDate(day-dow);
     const sun=new Date(mon);sun.setDate(mon.getDate()+6);
     start=fmtDateISO(mon);end=fmtDateISO(sun);
     label=`${fmtDate(start)} – ${fmtDate(end)}`;
-    await loadSarbatori(y);
   } else {
     start=end=fmtDateISO(d);
     label=d.toLocaleDateString('ro-RO',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-    await loadSarbatori(y);
   }
+  return {start,end,label,y};
+}
+
+async function refreshPontaj(){
+  const {start,end,label,y}=getPeriodRange();
   document.getElementById('pont-nav-label').textContent=label;
-  if(angId){await loadPontajPeriod(angId,start,end);}else{allPontaj=[];}
+  await loadSarbatori(y);
+
+  const angajati=getAngajatiFiltrati();
+  if(angajati.length){
+    const ids=angajati.map(a=>a.id);
+    const {data}=await sb.from('pontaj').select('*').in('angajat_id',ids).gte('data',start).lte('data',end);
+    allPontaj=data||[];
+  } else {
+    allPontaj=[];
+  }
   renderPontaj();
 }
 
 function renderPontaj(){
   const cont=document.getElementById('pont-content');
   const sarb=new Set(allSarbatori.map(s=>s.data));
-  const pontMap={};allPontaj.forEach(p=>{pontMap[p.data]=p;});
   const today=fmtDateISO(new Date());
-  const ang=allAngajati.find(a=>a.id===editingPontajAngajatId);
+  const angajati=getAngajatiFiltrati();
 
-  if(pontajZoom==='luna') cont.innerHTML=renderLuna(pontMap,sarb,today);
-  else if(pontajZoom==='saptamana') cont.innerHTML=renderSaptamana(pontMap,sarb,today);
-  else cont.innerHTML=renderZi(pontMap,sarb,today);
+  if(!angajati.length){
+    cont.innerHTML='<div class="alert alert-info">Niciun angajat de afișat. '+(isAdmin()?'Verifică filtrele sau adaugă angajați în organigramă.':'Contul tău nu este asociat unui angajat — contactează un administrator.')+'</div>';
+    updateSelectionBar();
+    return;
+  }
+
+  if(pontajZoom==='luna') cont.innerHTML=renderLuna(angajati,sarb,today);
+  else if(pontajZoom==='saptamana') cont.innerHTML=renderSaptamana(angajati,sarb,today);
+  else cont.innerHTML=renderZi(angajati,sarb,today);
+  updateSelectionBar();
 }
 
-function renderLuna(pontMap,sarb,today){
+function toggleAngSelection(angId,checked){
+  if(checked) selectedAngajatiIds.add(angId);
+  else selectedAngajatiIds.delete(angId);
+  updateSelectionBar();
+}
+function updateSelectionBar(){
+  const bar=document.getElementById('pont-selection-bar');
+  if(!bar) return;
+  const n=selectedAngajatiIds.size;
+  bar.style.display=n>0?'flex':'none';
+  document.getElementById('pont-selection-count').textContent=n+' selectat'+(n===1?'':'i');
+}
+function clearSelection(){
+  selectedAngajatiIds.clear();
+  document.querySelectorAll('.pont-ang-checkbox').forEach(c=>c.checked=false);
+  updateSelectionBar();
+}
+
+// ── ZOOM LUNĂ: un singur angajat (primul filtrat, sau cel propriu) ──
+function renderLuna(angajati,sarb,today){
+  // Dacă admin și mai mulți angajați filtrați și niciunul explicit ales - arătăm listă + alegere rapidă
+  let ang=angajati.length===1?angajati[0]:null;
+  if(isAdmin()&&!ang){
+    // afișăm un selector simplu de angajat pentru vizualizare lunară detaliată
+    return `<div class="card">
+      <div style="margin-bottom:1rem;font-size:13px;color:var(--text3)">Mai mulți angajați corespund filtrului (${angajati.length}). Pentru vizualizarea lunară pe zile, selectează un angajat:</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
+        ${angajati.map(a=>`<div class="angajat-card" onclick="document.getElementById('pont-search').value='${angNume(a).replace(/'/g,"\\'")}'; renderPontaj();">
+          <div class="ang-avatar" style="background:var(--orange-l);color:var(--orange-d)">${(angNume(a)).split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
+          <div><div style="font-size:13px;font-weight:600">${angNume(a)}</div><div style="font-size:11px;color:var(--text3)">${a.functie||''}</div></div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }
+  if(!ang) ang=angajati[0];
+  const pontMap={};allPontaj.filter(p=>p.angajat_id===ang.id).forEach(p=>{pontMap[p.data]=p;});
+
   const d=pontajDate,y=d.getFullYear(),m=d.getMonth();
   const zileNum=new Date(y,m+1,0).getDate();
   const primaZi=(new Date(y,m,1).getDay()+6)%7;
-  let html=`<div class="card"><div class="pont-month-grid">`;
+  let html=`<div class="card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid var(--border)">
+      <div class="ang-avatar" style="background:var(--orange-l);color:var(--orange-d)">${(angNume(ang)).split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
+      <div><div style="font-size:14px;font-weight:700">${angNume(ang)}</div><div style="font-size:12px;color:var(--text3)">${ang.functie||''}</div></div>
+    </div>
+    <div class="pont-month-grid">`;
   ['Lun','Mar','Mie','Joi','Vin','Sâm','Dum'].forEach(z=>html+=`<div class="pont-day-hdr">${z}</div>`);
   for(let i=0;i<primaZi;i++) html+=`<div class="pont-cell empty"></div>`;
   for(let z=1;z<=zileNum;z++){
@@ -1267,14 +1467,15 @@ function renderLuna(pontMap,sarb,today){
       if(pont.ora_intrare)inner+=`<div class="pont-hours">${pont.ora_intrare.slice(0,5)}–${(pont.ora_iesire||'').slice(0,5)}</div>`;
       else if(pont.ore_lucrate)inner+=`<div class="pont-hours">${pont.ore_lucrate}h</div>`;
     }
-    const click=isAdmin()?`onclick="openPontajModal('${ds}')"`:pont?'':`onclick="openInvoireModalPrefilled('${ds}')"`;
+    const click=isAdmin()?`onclick="editingPontajAngajatId='${ang.id}';openPontajModal('${ds}')"`:pont?'':`onclick="openInvoireModalPrefilled('${ds}')"`;
     html+=`<div class="${cls}" ${click}>${inner}</div>`;
   }
   html+=`</div></div>`;
   // Sumar
+  const pontAng=allPontaj.filter(p=>p.angajat_id===ang.id);
   const cnts={P:0,CO:0,CM:0,INV:0,CFP:0,AB:0};
-  allPontaj.forEach(p=>{if(cnts[p.tip]!==undefined)cnts[p.tip]++;});
-  const oreTotal=allPontaj.reduce((s,p)=>s+(p.ore_lucrate||0),0);
+  pontAng.forEach(p=>{if(cnts[p.tip]!==undefined)cnts[p.tip]++;});
+  const oreTotal=pontAng.reduce((s,p)=>s+(p.ore_lucrate||0),0);
   html+=`<div class="grid-4" style="margin-top:1rem">
     ${statCard('Prezent',cnts.P,'var(--green)','var(--green-l)','M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4 12 14.01l-3-3')}
     ${statCard('CO',cnts.CO,'var(--navy)','var(--navy-ll)','M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z')}
@@ -1284,77 +1485,114 @@ function renderLuna(pontMap,sarb,today){
   return html;
 }
 
-function renderSaptamana(pontMap,sarb,today){
+// ── ZOOM SĂPTĂMÂNĂ: grid cu toți angajații filtrați ──
+function renderSaptamana(angajati,sarb,today){
   const d=pontajDate;const dow=(d.getDay()+6)%7;
   const luni=new Date(d);luni.setDate(d.getDate()-dow);
   const zile=Array.from({length:7},(_,i)=>{const x=new Date(luni);x.setDate(luni.getDate()+i);return x;});
-  const angajatiView=isAdmin()?allAngajati.filter(a=>a.activ):(currentProfile?.angajat_id?allAngajati.filter(a=>a.id===currentProfile.angajat_id):[]);
-  
-  let html=`<div class="card" style="padding:0;overflow:hidden"><div class="pont-week-grid" style="grid-template-columns:180px repeat(7,1fr)">`;
+  const pontMap={};allPontaj.forEach(p=>{pontMap[p.angajat_id+'_'+p.data]=p;});
+
+  let html=`<div class="card" style="padding:0;overflow:hidden;overflow-x:auto"><div class="pont-week-grid" style="grid-template-columns:${isAdmin()?'34px ':''}180px repeat(7,1fr);min-width:700px">`;
+  if(isAdmin()) html+=`<div class="pont-week-hdr"></div>`;
   html+=`<div class="pont-week-hdr">Angajat</div>`;
   zile.forEach(z=>{
-    const ds=fmtDateISO(z);const isWe=z.getDay()===0||z.getDay()===6;const isToday=ds===today;
+    const ds=fmtDateISO(z);const isToday=ds===today;
     const zi=['Dum','Lun','Mar','Mie','Joi','Vin','Sâm'][z.getDay()];
     html+=`<div class="pont-week-hdr day-hdr${isToday?' today-col':''}"><span class="day-name">${zi}</span><span class="day-num">${z.getDate()}</span></div>`;
   });
-  angajatiView.slice(0,20).forEach(ang=>{
+  angajati.slice(0,40).forEach(ang=>{
     const ini=(angNume(ang)).split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
-    html+=`<div class="pont-week-label"><div class="ang-avatar" style="width:30px;height:30px;font-size:11px;background:var(--orange-l);color:var(--orange-d)">${ini}</div><div style="font-size:12px;font-weight:500;margin-left:6px">${ang.prenume} ${ang.nume}</div></div>`;
+    const isSel=selectedAngajatiIds.has(ang.id);
+    if(isAdmin()) html+=`<div class="pont-week-label" style="padding:6px;justify-content:center"><input type="checkbox" class="pont-ang-checkbox" ${isSel?'checked':''} onchange="toggleAngSelection('${ang.id}',this.checked)" style="width:15px;height:15px;accent-color:var(--orange);cursor:pointer"/></div>`;
+    html+=`<div class="pont-week-label"><div class="ang-avatar" style="width:30px;height:30px;font-size:11px;background:var(--orange-l);color:var(--orange-d)">${ini}</div><div style="font-size:12px;font-weight:500;margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${angNume(ang)}</div></div>`;
     zile.forEach(z=>{
       const ds=fmtDateISO(z);const isWe=z.getDay()===0||z.getDay()===6;const isToday=ds===today;
-      // pontajul per angajat necesita query separat - simplificat pt demo
+      const isSarb=sarb.has(ds);
+      const pont=pontMap[ang.id+'_'+ds];
       let cls='pont-week-cell';if(isWe)cls+=' weekend-cell';if(isToday)cls+=' today-cell';
-      const click=isAdmin()?`onclick="editingPontajAngajatId='${ang.id}';openPontajModal('${ds}')"`:''  ;
-      html+=`<div class="${cls}" ${click}></div>`;
+      const click=isAdmin()?`onclick="editingPontajAngajatId='${ang.id}';openPontajModal('${ds}')"`:'';
+      let inner='';
+      if(isSarb) inner=`<span class="pont-tip-badge tip-SL">SL</span>`;
+      else if(pont) inner=`<span class="pont-tip-badge tip-${pont.tip}">${pont.tip}</span>${pont.ora_intrare?`<div class="pont-hours">${pont.ora_intrare.slice(0,5)}–${(pont.ora_iesire||'').slice(0,5)}</div>`:pont.ore_lucrate?`<div class="pont-hours">${pont.ore_lucrate}h</div>`:''}`;
+      html+=`<div class="${cls}" ${click}>${inner}</div>`;
     });
   });
   html+=`</div></div>`;
+  if(angajati.length>40) html+=`<div class="alert alert-info" style="margin-top:.75rem">Se afișează primii 40 din ${angajati.length} angajați. Folosește căutarea pentru a restrânge lista.</div>`;
   return html;
 }
 
-function renderZi(pontMap,sarb,today){
+// ── ZOOM ZI: carduri cu toți angajații filtrați + checkbox selecție ──
+function renderZi(angajati,sarb,today){
   const ds=fmtDateISO(pontajDate);
   const isSarb=sarb.has(ds);
-  const angajatiView=isAdmin()?allAngajati.filter(a=>a.activ):(currentProfile?.angajat_id?allAngajati.filter(a=>a.id===currentProfile.angajat_id):[]);
-  let html=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.75rem">`;
-  angajatiView.forEach(ang=>{
+  let html=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.75rem">`;
+  angajati.forEach(ang=>{
     const pont=allPontaj.find(p=>p.angajat_id===ang.id&&p.data===ds);
     const ini=(angNume(ang)).split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const schimb=allSchimburi.find(s=>s.id===ang.schimb_id);
+    const isSel=selectedAngajatiIds.has(ang.id);
     let cls='pont-day-employee';if(pont)cls+=' has-data';
     const click=isAdmin()?`onclick="editingPontajAngajatId='${ang.id}';openPontajModal('${ds}')"`:isSarb?'':pont?'':`onclick="openInvoireModalPrefilled('${ds}')"`;
-    html+=`<div class="${cls}" ${click}>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:.5rem">
-        <div class="ang-avatar" style="background:var(--orange-l);color:var(--orange-d)">${ini}</div>
-        <div><div style="font-size:13px;font-weight:600">${ang.prenume} ${ang.nume}</div><div style="font-size:11px;color:var(--text3)">${ang.functie||'—'}${schimb?' · '+schimb.nume:''}</div></div>
+    html+=`<div class="${cls}" style="position:relative">
+      ${isAdmin()?`<input type="checkbox" class="pont-ang-checkbox" ${isSel?'checked':''} onclick="event.stopPropagation()" onchange="toggleAngSelection('${ang.id}',this.checked)" style="position:absolute;top:10px;right:10px;width:16px;height:16px;accent-color:var(--orange);cursor:pointer"/>`:''}
+      <div ${click} style="cursor:pointer">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:.5rem">
+          <div class="ang-avatar" style="background:var(--orange-l);color:var(--orange-d)">${ini}</div>
+          <div><div style="font-size:13px;font-weight:600">${angNume(ang)}</div><div style="font-size:11px;color:var(--text3)">${ang.functie||'—'}${schimb?' · '+schimb.nume:''}</div></div>
+        </div>
+        ${isSarb?`<span class="badge badge-amber">Sărbătoare legală</span>`:
+          pont?`<span class="pont-tip-badge tip-${pont.tip}">${tipLabel(pont.tip)}</span>${pont.ora_intrare?`<div style="font-size:11px;color:var(--text3);margin-top:3px">${pont.ora_intrare.slice(0,5)} – ${(pont.ora_iesire||'').slice(0,5)}</div>`:pont.ore_lucrate?`<div style="font-size:11px;color:var(--text3);margin-top:3px">${pont.ore_lucrate}h</div>`:''}`:
+          `<span class="badge badge-gray">Neînregistrat</span>`}
       </div>
-      ${isSarb?`<span class="badge badge-amber">Sărbătoare legală</span>`:
-        pont?`<span class="pont-tip-badge tip-${pont.tip}">${tipLabel(pont.tip)}</span>${pont.ora_intrare?`<div style="font-size:11px;color:var(--text3);margin-top:3px">${pont.ora_intrare.slice(0,5)} – ${(pont.ora_iesire||'').slice(0,5)}</div>`:''}`:
-        `<span class="badge badge-gray">Neînregistrat</span>`}
     </div>`;
   });
   html+=`</div>`;
   return html;
 }
 
-// MODAL PONTAJ
+// MODAL PONTAJ INDIVIDUAL
 function openPontajModal(ds){
   editingPontajDate=ds;
   const pont=allPontaj.find(p=>p.data===ds&&p.angajat_id===editingPontajAngajatId);
   const ang=allAngajati.find(a=>a.id===editingPontajAngajatId);
+  const schimb=allSchimburi.find(s=>s.id===ang?.schimb_id);
   document.getElementById('modal-pont-title').textContent=`Pontaj ${fmtDate(ds)}${ang?' — '+angNume(ang):''}`;
   document.getElementById('pont-tip').value=pont?.tip||'P';
-  document.getElementById('pont-ora-in').value=pont?.ora_intrare?.slice(0,5)||'07:00';
-  document.getElementById('pont-ora-out').value=pont?.ora_iesire?.slice(0,5)||'15:30';
-  document.getElementById('pont-ore').value=pont?.ore_lucrate||8;
+  const oraInDefault=schimb?.ore_fixe&&schimb.ora_start?schimb.ora_start.slice(0,5):'07:00';
+  const oraOutDefault=schimb?.ore_fixe&&schimb.ora_sfarsit?schimb.ora_sfarsit.slice(0,5):'15:30';
+  document.getElementById('pont-ora-in').value=pont?.ora_intrare?.slice(0,5)||oraInDefault;
+  document.getElementById('pont-ora-out').value=pont?.ora_iesire?.slice(0,5)||oraOutDefault;
+  document.getElementById('pont-ore').value=pont?.ore_lucrate||schimb?.ore_zi||8;
   document.getElementById('pont-obs').value=pont?.observatii||'';
   document.getElementById('pont-del-btn').style.display=pont?'inline-flex':'none';
+  // Mod implicit: interval orar dacă schimbul e cu ore fixe, altfel doar ore
+  setPontMod(schimb?(schimb.ore_fixe?'interval':'ore'):(pont?.ora_intrare?'interval':'ore'));
   togglePontOre();
   openModal('modal-pont');
 }
+function setPontMod(mod){
+  document.getElementById('pont-mod').value=mod;
+  const bI=document.getElementById('pont-mod-interval');
+  const bO=document.getElementById('pont-mod-ore');
+  if(bI)bI.classList.toggle('active',mod==='interval');
+  if(bO)bO.classList.toggle('active',mod==='ore');
+  const rowInterval=document.getElementById('pont-ore-row');
+  const rowOre=document.getElementById('pont-ore-simplu-row');
+  if(rowInterval)rowInterval.style.display=mod==='interval'?'grid':'none';
+  if(rowOre)rowOre.style.display=mod==='ore'?'block':'none';
+}
 function togglePontOre(){
   const tip=document.getElementById('pont-tip').value;
-  document.getElementById('pont-ore-row').style.display=tip==='P'?'grid':'none';
+  const wrap=document.getElementById('pont-mod-wrap');
+  const isP=tip==='P';
+  if(wrap) wrap.style.display=isP?'block':'none';
+  if(!isP){
+    document.getElementById('pont-ore-row').style.display='none';
+    document.getElementById('pont-ore-simplu-row').style.display='none';
+  } else {
+    setPontMod(document.getElementById('pont-mod').value||'interval');
+  }
 }
 function calcOreAuto(){
   const i=document.getElementById('pont-ora-in').value;const o=document.getElementById('pont-ora-out').value;
@@ -1363,10 +1601,12 @@ function calcOreAuto(){
 async function savePontajZi(){
   if(!editingPontajAngajatId){toast('Alege un angajat','error');return;}
   const tip=document.getElementById('pont-tip').value;
+  const mod=document.getElementById('pont-mod').value;
+  const isInterval=tip==='P'&&mod==='interval';
   const payload={angajat_id:editingPontajAngajatId,data:editingPontajDate,tip,
-    ora_intrare:tip==='P'?document.getElementById('pont-ora-in').value:null,
-    ora_iesire:tip==='P'?document.getElementById('pont-ora-out').value:null,
-    ore_lucrate:parseFloat(document.getElementById('pont-ore').value)||null,
+    ora_intrare:isInterval?document.getElementById('pont-ora-in').value:null,
+    ora_iesire:isInterval?document.getElementById('pont-ora-out').value:null,
+    ore_lucrate:tip==='P'?parseFloat(document.getElementById('pont-ore').value)||null:null,
     observatii:document.getElementById('pont-obs').value||null,
     created_by:currentProfile.id,updated_at:new Date().toISOString()};
   const existing=allPontaj.find(p=>p.data===editingPontajDate&&p.angajat_id===editingPontajAngajatId);
@@ -1381,6 +1621,63 @@ async function deletePontajZi(){
   await sb.from('pontaj').delete().eq('id',existing.id);
   toast('Șters','success');closeModal('modal-pont');await refreshPontaj();
 }
+
+// MODAL PONTAJ DE GRUP
+function openPontajGroupModal(){
+  if(!selectedAngajatiIds.size){toast('Selectează cel puțin un angajat','error');return;}
+  const n=selectedAngajatiIds.size;
+  document.getElementById('group-pont-count').textContent=n+' angajat'+(n===1?'':'i selectați');
+  document.getElementById('group-pont-data').value=fmtDateISO(pontajDate);
+  document.getElementById('group-pont-tip').value='P';
+  document.getElementById('group-pont-ora-in').value='07:00';
+  document.getElementById('group-pont-ora-out').value='15:30';
+  document.getElementById('group-pont-ore').value=8;
+  setGroupPontMod('interval');
+  toggleGroupPontOre();
+  openModal('modal-pont-group');
+}
+function setGroupPontMod(mod){
+  document.getElementById('group-pont-mod').value=mod;
+  document.getElementById('group-mod-interval').classList.toggle('active',mod==='interval');
+  document.getElementById('group-mod-ore').classList.toggle('active',mod==='ore');
+  document.getElementById('group-pont-ore-row').style.display=mod==='interval'?'grid':'none';
+  document.getElementById('group-pont-ore-simplu-row').style.display=mod==='ore'?'block':'none';
+}
+function toggleGroupPontOre(){
+  const tip=document.getElementById('group-pont-tip').value;
+  document.getElementById('group-mod-wrap').style.display=tip==='P'?'block':'none';
+  if(tip!=='P'){
+    document.getElementById('group-pont-ore-row').style.display='none';
+    document.getElementById('group-pont-ore-simplu-row').style.display='none';
+  } else setGroupPontMod(document.getElementById('group-pont-mod').value||'interval');
+}
+async function saveGroupPontaj(){
+  const tip=document.getElementById('group-pont-tip').value;
+  const data=document.getElementById('group-pont-data').value;
+  const mod=document.getElementById('group-pont-mod').value;
+  const isInterval=tip==='P'&&mod==='interval';
+  if(!data){toast('Alege data','error');return;}
+  const payloadBase={
+    data,tip,
+    ora_intrare:isInterval?document.getElementById('group-pont-ora-in').value:null,
+    ora_iesire:isInterval?document.getElementById('group-pont-ora-out').value:null,
+    ore_lucrate:tip==='P'?parseFloat(document.getElementById('group-pont-ore').value)||null:null,
+    observatii:document.getElementById('group-pont-obs').value||null,
+    created_by:currentProfile.id,updated_at:new Date().toISOString()
+  };
+  let okCount=0,errCount=0;
+  for(const angId of selectedAngajatiIds){
+    const existing=allPontaj.find(p=>p.data===data&&p.angajat_id===angId);
+    const payload={...payloadBase,angajat_id:angId};
+    const {error}=existing?await sb.from('pontaj').update(payload).eq('id',existing.id):await sb.from('pontaj').insert(payload);
+    if(error)errCount++;else okCount++;
+  }
+  toast(`Pontaj salvat pentru ${okCount} angajați`+(errCount?` (${errCount} erori)`:''),errCount?'warn':'success');
+  closeModal('modal-pont-group');
+  clearSelection();
+  await refreshPontaj();
+}
+
 function exportPontajCSV(){
   let csv='Angajat,Data,Tip,Ora intrare,Ora ieșire,Ore,Observații\n';
   allPontaj.forEach(p=>{
@@ -1394,27 +1691,53 @@ function exportPontajCSV(){
 // ═══════════════════════════════════════════════
 // CERERI INVOIRI
 // ═══════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════
+// CERERI INVOIRI
+// ═══════════════════════════════════════════════
+function calculeazaZileLucratoare(dataStart,dataSfarsit,sarbatoriSet){
+  let count=0;
+  let cur=new Date(dataStart+'T00:00:00');
+  const end=new Date(dataSfarsit+'T00:00:00');
+  while(cur<=end){
+    const dow=cur.getDay();
+    const ds=fmtDateISO(cur);
+    if(dow!==0&&dow!==6&&!sarbatoriSet.has(ds)) count++;
+    cur.setDate(cur.getDate()+1);
+  }
+  return count;
+}
+
 function renderInvoiri(){
   const statusF=document.getElementById('inv-filter-status').value;
+  const tipF=document.getElementById('inv-filter-tip')?.value||'';
   const angF=document.getElementById('inv-filter-ang').value;
   const angSel=document.getElementById('inv-filter-ang');
   if(isAdmin()&&angSel.style.display==='none'){
     angSel.style.display='block';
-    angSel.innerHTML='<option value="">Toți angajații</option>'+allAngajati.map(a=>`<option value="${a.id}">${a.prenume} ${a.nume}</option>`).join('');
+    angSel.innerHTML='<option value="">Toți angajații</option>'+allAngajati.map(a=>`<option value="${a.id}">${angNume(a)}</option>`).join('');
   }
-  let inv=[...allInvoiri];
+  let inv=[...allCereri];
   if(statusF) inv=inv.filter(i=>i.status===statusF);
+  if(tipF) inv=inv.filter(i=>i.tip===tipF);
   if(angF) inv=inv.filter(i=>i.angajat_id===angF);
   const el=document.getElementById('invoiri-list');
   if(!inv.length){el.innerHTML='<div class="alert alert-info">Nicio cerere înregistrată.</div>';return;}
   el.innerHTML=inv.map(i=>{
     const ang=allAngajati.find(a=>a.id===i.angajat_id);
     const canApprove=isAdmin()&&i.status==='pending';
+    const isCO=i.tip==='CO';
+    const perioada=i.data_start===i.data_sfarsit
+      ?fmtDate(i.data_start)
+      :`${fmtDate(i.data_start)} – ${fmtDate(i.data_sfarsit)}`;
     return `<div class="cerere-card ${i.status}" onclick="openInvDetail('${i.id}')">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem">
         <div>
-          <div style="font-size:14px;font-weight:600">${ang?angNume(ang):'—'}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px">${fmtDate(i.data)} · ${i.ora_start||''} – ${i.ora_sfarsit||''}</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="badge ${isCO?'badge-navy':'badge-purple'}">${isCO?'📋 Concediu Odihnă':'🕐 Invoire'}</span>
+            <div style="font-size:14px;font-weight:600">${ang?angNume(ang):'—'}</div>
+          </div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">${perioada}${!isCO&&i.ora_start?` · ${i.ora_start.slice(0,5)} – ${(i.ora_sfarsit||'').slice(0,5)}`:''}${isCO&&i.zile_lucratoare?` · ${i.zile_lucratoare} zile lucrătoare`:''}</div>
           ${i.motiv?`<div style="font-size:13px;color:var(--text2);margin-top:5px">${i.motiv}</div>`:''}
         </div>
         <span class="badge ${statusBadge(i.status)}">${statusLabel(i.status)}</span>
@@ -1426,47 +1749,84 @@ function renderInvoiri(){
     </div>`;
   }).join('');
 }
-function openInvoireModal(){
+
+function setCerereTip(tip){
+  document.getElementById('inv-tip').value=tip;
+  document.getElementById('inv-tip-inv').classList.toggle('active',tip==='INV');
+  document.getElementById('inv-tip-co').classList.toggle('active',tip==='CO');
+  document.getElementById('inv-ore-row').style.display=tip==='INV'?'grid':'none';
+  document.getElementById('inv-data-sfarsit-group').style.display=tip==='CO'?'block':'none';
+  document.getElementById('inv-zile-calc-wrap').style.display=tip==='CO'?'block':'none';
+  document.getElementById('inv-data-label').textContent=tip==='CO'?'Din data':'Data';
+  document.getElementById('modal-invoiere-title').textContent=tip==='CO'?'Cerere concediu de odihnă':'Cerere invoire';
+  updateCerereZileCalc();
+}
+function updateCerereZileCalc(){
+  const tip=document.getElementById('inv-tip').value;
+  if(tip!=='CO') return;
+  const start=document.getElementById('inv-data').value;
+  const end=document.getElementById('inv-data-sfarsit').value||start;
+  if(!start) return;
+  const sarbSet=new Set(allSarbatori.map(s=>s.data));
+  const zile=calculeazaZileLucratoare(start,end,sarbSet);
+  document.getElementById('inv-zile-calc').textContent=zile+' zi'+(zile===1?'':'le')+' lucrătoare';
+}
+function openInvoireModal(tip){
   const today=fmtDateISO(new Date());
   document.getElementById('inv-data').value=today;
+  document.getElementById('inv-data-sfarsit').value=today;
   document.getElementById('inv-ora-start').value='08:00';
   document.getElementById('inv-ora-end').value='12:00';
   document.getElementById('inv-motiv').value='';
   const angSel=document.getElementById('inv-angajat');
   angSel.innerHTML='';
   if(isAdmin()){
+    angSel.disabled=false;
     allAngajati.filter(a=>a.activ).forEach(a=>angSel.add(new Option(angNume(a),a.id)));
   } else {
+    angSel.disabled=true;
     if(currentProfile?.angajat_id){
       const ang=allAngajati.find(a=>a.id===currentProfile.angajat_id);
       if(ang)angSel.add(new Option(angNume(ang),ang.id));
     }
   }
+  setCerereTip(tip||'INV');
   openModal('modal-invoiere');
 }
 function openInvoireModalPrefilled(ds){
-  openInvoireModal();
+  openInvoireModal('INV');
   document.getElementById('inv-data').value=ds;
+  document.getElementById('inv-data-sfarsit').value=ds;
 }
 async function saveInvoiere(){
   const angajat_id=document.getElementById('inv-angajat').value;
-  const data=document.getElementById('inv-data').value;
-  const ora_start=document.getElementById('inv-ora-start').value;
-  const ora_sfarsit=document.getElementById('inv-ora-end').value;
+  const tip=document.getElementById('inv-tip').value;
+  const data_start=document.getElementById('inv-data').value;
+  const data_sfarsit=tip==='CO'?(document.getElementById('inv-data-sfarsit').value||data_start):data_start;
+  const ora_start=tip==='INV'?document.getElementById('inv-ora-start').value:null;
+  const ora_sfarsit=tip==='INV'?document.getElementById('inv-ora-end').value:null;
   const motiv=document.getElementById('inv-motiv').value;
-  if(!angajat_id||!data){toast('Completează câmpurile obligatorii','error');return;}
-  const {error}=await sb.from('cereri_invoiri').insert({angajat_id,data,ora_start,ora_sfarsit,motiv,status:'pending',read_by_admin:false,read_by_user:true});
+  if(!angajat_id||!data_start){toast('Completează câmpurile obligatorii','error');return;}
+  if(tip==='CO'&&data_sfarsit<data_start){toast('Data de sfârșit nu poate fi înainte de data de început','error');return;}
+  const sarbSet=new Set(allSarbatori.map(s=>s.data));
+  const zile_lucratoare=tip==='CO'?calculeazaZileLucratoare(data_start,data_sfarsit,sarbSet):null;
+  const payload={angajat_id,tip,data_start,data_sfarsit,ora_start,ora_sfarsit,motiv,zile_lucratoare,
+    status:'pending',initiat_de:currentProfile.id,read_by_admin:false,read_by_user:true};
+  const {error}=await sb.from('cereri').insert(payload);
   if(error){toast('Eroare: '+error.message,'error');return;}
   toast('Cerere trimisă!','success');closeModal('modal-invoiere');await loadInvoiri();renderInvoiri();updateBadges();
 }
 function openInvDetail(id){
-  const i=allInvoiri.find(x=>x.id===id);if(!i) return;
+  const i=allCereri.find(x=>x.id===id);if(!i) return;
   const ang=allAngajati.find(a=>a.id===i.angajat_id);
+  const isCO=i.tip==='CO';
+  const perioada=i.data_start===i.data_sfarsit?fmtDate(i.data_start):`${fmtDate(i.data_start)} – ${fmtDate(i.data_sfarsit)}`;
   document.getElementById('modal-inv-detail-body').innerHTML=`
-    <div class="form-row"><div class="form-group"><div class="form-label">Angajat</div><div>${ang?angNume(ang):'—'}</div></div>
-    <div class="form-group"><div class="form-label">Status</div><span class="badge ${statusBadge(i.status)}">${statusLabel(i.status)}</span></div></div>
-    <div class="form-row"><div class="form-group"><div class="form-label">Data</div><div>${fmtDate(i.data)}</div></div>
-    <div class="form-group"><div class="form-label">Interval</div><div>${i.ora_start||''} – ${i.ora_sfarsit||''}</div></div></div>
+    <div class="form-row"><div class="form-group"><div class="form-label">Tip</div><span class="badge ${isCO?'badge-navy':'badge-purple'}">${isCO?'Concediu Odihnă':'Invoire'}</span></div>
+    <div class="form-group"><div class="form-label">Angajat</div><div>${ang?angNume(ang):'—'}</div></div></div>
+    <div class="form-row"><div class="form-group"><div class="form-label">Status</div><span class="badge ${statusBadge(i.status)}">${statusLabel(i.status)}</span></div>
+    <div class="form-group"><div class="form-label">Perioadă</div><div>${perioada}${isCO&&i.zile_lucratoare?' ('+i.zile_lucratoare+' zile lucrătoare)':''}</div></div></div>
+    ${!isCO?`<div class="form-group"><div class="form-label">Interval orar</div><div>${(i.ora_start||'').slice(0,5)} – ${(i.ora_sfarsit||'').slice(0,5)}</div></div>`:''}
     ${i.motiv?`<div class="form-group"><div class="form-label">Motiv</div><div>${i.motiv}</div></div>`:''}
     ${i.mesaj_admin?`<div class="form-group"><div class="form-label">Răspuns admin</div><div class="alert alert-${i.status==='aprobat'?'success':'danger'}" style="margin:0">${i.mesaj_admin}</div></div>`:''}
     <div class="form-group"><div class="form-label">Depusă la</div><div>${fmtDateTime(i.created_at)}</div></div>`;
@@ -1477,11 +1837,12 @@ function openInvDetail(id){
 }
 async function processInvoiere(id,status){
   const msg=status==='refuzat'?(prompt('Motiv refuz (opțional):')||''):'';
-  const {error}=await sb.from('cereri_invoiri').update({status,mesaj_admin:msg||null,admin_id:currentProfile.id,read_by_user:false,updated_at:new Date().toISOString()}).eq('id',id);
+  const {error}=await sb.from('cereri').update({status,mesaj_admin:msg||null,admin_id:currentProfile.id,read_by_user:false,updated_at:new Date().toISOString()}).eq('id',id);
   if(error){toast('Eroare','error');return;}
   toast(status==='aprobat'?'Cerere aprobată ✓':'Cerere refuzată','success');
   await loadInvoiri();renderInvoiri();updateBadges();
 }
+
 
 // ═══════════════════════════════════════════════
 // ORGANIGRAMĂ
@@ -1627,7 +1988,11 @@ function openOrgModal(id,parentId){
 
   // Schimburi
   const sSel=document.getElementById('ang-schimb');
-  sSel.innerHTML='<option value="">— nealocat —</option>'+allSchimburi.map(s=>`<option value="${s.id}">${s.nume} (${s.ora_start||''}–${s.ora_sfarsit||''})</option>`).join('');
+  sSel.innerHTML='<option value="">— nealocat —</option>'+allSchimburi.map(s=>`<option value="${s.id}">${s.nume} ${s.ore_fixe?'('+( s.ora_start||'').slice(0,5)+'–'+(s.ora_sfarsit||'').slice(0,5)+')':'('+s.ore_zi+'h/zi)'}</option>`).join('');
+
+  // Secții
+  const secSel=document.getElementById('ang-sectie');
+  secSel.innerHTML='<option value="">— nealocat —</option>'+allSectii.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
 
   // Date angajat / nod
   if(ang){
@@ -1637,7 +2002,9 @@ function openOrgModal(id,parentId){
     document.getElementById('ang-nr-mat').value=ang.nr_matricol||'';
     document.getElementById('ang-functie').value=ang.functie||'';
     document.getElementById('ang-schimb').value=ang.schimb_id||'';
+    document.getElementById('ang-sectie').value=ang.sectie_id||'';
     document.getElementById('ang-data-ang').value=ang.data_angajare||'';
+    document.getElementById('ang-zile-co').value=ang.zile_co||21;
     const user=allProfiles.find(p=>p.angajat_id===ang.id);
     if(user){
       document.getElementById('ang-create-cont').checked=true;
@@ -1659,7 +2026,9 @@ function openOrgModal(id,parentId){
   } else {
     ['ang-prenume','ang-nume-fam','ang-nr-mat','ang-functie','ang-username','ang-pass'].forEach(x=>document.getElementById(x).value='');
     document.getElementById('ang-schimb').value='';
+    document.getElementById('ang-sectie').value='';
     document.getElementById('ang-data-ang').value='';
+    document.getElementById('ang-zile-co').value=21;
     document.getElementById('ang-create-cont').checked=false;
     toggleContFields();
   }
@@ -1721,14 +2090,16 @@ async function saveOrgNode(){
   if(tip==='angajat'&&nodeId){
     const nr_matricol=document.getElementById('ang-nr-mat').value.trim()||null;
     const schimb_id=document.getElementById('ang-schimb').value||null;
+    const sectie_id=document.getElementById('ang-sectie').value||null;
     const data_angajare=document.getElementById('ang-data-ang').value||null;
+    const zile_co=parseInt(document.getElementById('ang-zile-co').value)||21;
     const existingAng=allAngajati.find(a=>a.org_node_id===nodeId);
     let angId;
     if(existingAng){
-      await sb.from('angajati').update({prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,data_angajare}).eq('id',existingAng.id);
+      await sb.from('angajati').update({prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare,zile_co}).eq('id',existingAng.id);
       angId=existingAng.id;
     } else {
-      const {data}=await sb.from('angajati').insert({org_node_id:nodeId,prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,data_angajare,activ:true}).select().single();
+      const {data}=await sb.from('angajati').insert({org_node_id:nodeId,prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare,zile_co,activ:true}).select().single();
       angId=data?.id;
     }
     // Cont utilizator — doar dacă checkbox-ul e bifat
@@ -1775,10 +2146,16 @@ function renderSchimburi(){
   document.getElementById('schimburi-list').innerHTML=allSchimburi.length?allSchimburi.map(s=>
     `<div class="schimb-card" onclick="openSchimbModal('${s.id}')">
       <div class="schimb-color-dot" style="background:${s.culoare}"></div>
-      <div style="flex:1"><div style="font-weight:600;font-size:14px">${s.nume}</div><div style="font-size:12px;color:var(--text3)">${s.ora_start||''} – ${s.ora_sfarsit||''} · ${s.ore_zi||8}h/zi</div></div>
+      <div style="flex:1"><div style="font-weight:600;font-size:14px">${s.nume}</div><div style="font-size:12px;color:var(--text3)">${s.ore_fixe?`${(s.ora_start||'').slice(0,5)} – ${(s.ora_sfarsit||'').slice(0,5)}`:'Ore flexibile'} · ${s.ore_zi||8}h/zi standard</div></div>
       <span class="badge badge-green">${allAngajati.filter(a=>a.schimb_id===s.id).length} angajați</span>
     </div>`).join('')
   :'<div style="color:var(--text3);font-size:13px;margin-bottom:.75rem">Niciun schimb definit.</div>';
+}
+function setSchimbTip(oreFixe){
+  document.getElementById('schimb-ore-fixe').value=oreFixe?'true':'false';
+  document.getElementById('schimb-tip-fixe').classList.toggle('active',oreFixe);
+  document.getElementById('schimb-tip-flex').classList.toggle('active',!oreFixe);
+  document.getElementById('schimb-interval-fields').style.display=oreFixe?'grid':'none';
 }
 function openSchimbModal(id){
   editingSchimbId=id||null;
@@ -1791,17 +2168,20 @@ function openSchimbModal(id){
   document.getElementById('schimb-ore').value=s?.ore_zi||8;
   document.getElementById('schimb-culoare').value=s?.culoare||'#1a7a4a';
   document.getElementById('schimb-del-btn').style.display=id?'inline-flex':'none';
+  setSchimbTip(s?.ore_fixe!==false);
   openModal('modal-schimb');
 }
 async function saveSchimb(){
   const nume=document.getElementById('schimb-nume').value.trim();
-  const ora_start=document.getElementById('schimb-start').value;
-  const ora_sfarsit=document.getElementById('schimb-end').value;
+  const ore_fixe=document.getElementById('schimb-ore-fixe').value==='true';
+  const ora_start=ore_fixe?document.getElementById('schimb-start').value:null;
+  const ora_sfarsit=ore_fixe?document.getElementById('schimb-end').value:null;
   const ore_zi=parseFloat(document.getElementById('schimb-ore').value)||8;
   const culoare=document.getElementById('schimb-culoare').value;
   if(!nume){toast('Completează denumirea','error');return;}
-  if(editingSchimbId) await sb.from('schimburi').update({nume,ora_start,ora_sfarsit,ore_zi,culoare}).eq('id',editingSchimbId);
-  else await sb.from('schimburi').insert({nume,ora_start,ora_sfarsit,ore_zi,culoare});
+  const payload={nume,ore_fixe,ora_start,ora_sfarsit,ore_zi,culoare};
+  if(editingSchimbId) await sb.from('schimburi').update(payload).eq('id',editingSchimbId);
+  else await sb.from('schimburi').insert(payload);
   toast('Schimb salvat!','success');closeModal('modal-schimb');await loadSchimburi();renderSchimburi();
 }
 async function deleteSchimb(){
@@ -1812,7 +2192,7 @@ async function deleteSchimb(){
 function renderSarbatori(){
   const el=document.getElementById('sarb-list');
   el.innerHTML=allSarbatori.length?allSarbatori.map(s=>
-    `<div class="sarb-row"><span class="sarb-date">${fmtDate(s.data)}</span><span class="sarb-name">${s.denumire}</span><button style="border:none;background:none;cursor:pointer;color:var(--text3);font-size:18px" onclick="deleteSarbatoare('${s.id}')">×</button></div>`
+    `<div class="sarb-row"><span class="sarb-date">${fmtDate(s.data)}</span><span class="sarb-name">${s.denumire}</span>${isAdmin()?`<button style="border:none;background:none;cursor:pointer;color:var(--text3);font-size:18px" onclick="deleteSarbatoare('${s.id}')">×</button>`:''}</div>`
   ).join(''):'<div style="color:var(--text3);font-size:13px;margin-bottom:.75rem">Nicio sărbătoare adăugată.</div>';
 }
 async function addSarbatoare(){
