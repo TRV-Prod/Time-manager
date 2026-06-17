@@ -659,7 +659,7 @@ tr:hover td{background:var(--slate-ll)}
       <div class="form-row">
         <div class="form-group" style="flex:2">
           <label class="form-label">Prenume <span style="color:var(--red)">*</span></label>
-          <input id="ang-prenume" class="form-control" placeholder=""/>
+          <input id="ang-prenume" class="form-control" placeholder="" oninput="autoGenUsername()"/>
         </div>
         <div class="form-group" style="flex:1">
           <label class="form-label">Inițiala</label>
@@ -667,13 +667,27 @@ tr:hover td{background:var(--slate-ll)}
         </div>
         <div class="form-group" style="flex:2">
           <label class="form-label">Nume <span style="color:var(--red)">*</span></label>
-          <input id="ang-nume-fam" class="form-control" placeholder=""/>
+          <input id="ang-nume-fam" class="form-control" placeholder="" oninput="autoGenUsername()"/>
         </div>
       </div>
 
       <div class="form-group">
         <label class="form-label">Funcție <span style="color:var(--red)">*</span></label>
         <input id="ang-functie" class="form-control" placeholder=""/>
+      </div>
+
+      <!-- Câmp special: Manager Secție conduce o secție -->
+      <div id="manager-sectie-field" class="form-group" style="display:none">
+        <label class="form-label">Secție condusă <span style="color:var(--red)">*</span></label>
+        <select id="org-sectie-condusa" class="form-control"><option value="">— selectează secția —</option></select>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Toți angajații subordonați acestui manager vor fi repartizați automat în această secție.</div>
+      </div>
+
+      <!-- Câmp special: Șef Formație coordonează un schimb -->
+      <div id="sef-schimb-field" class="form-group" style="display:none">
+        <label class="form-label">Schimb coordonat <span style="color:var(--red)">*</span></label>
+        <select id="org-schimb-coordonat" class="form-control"><option value="">— selectează schimbul —</option></select>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Toți angajații subordonați acestui șef de formație vor fi repartizați automat pe acest schimb.</div>
       </div>
 
       <!-- Câmpuri extra doar pentru angajat -->
@@ -872,6 +886,8 @@ create table if not exists public.org_nodes (
   parent_id uuid references public.org_nodes(id) on delete cascade,
   tip text not null check (tip in ('director','manager_dep','manager','sectie','sef_formatie','workcenter','angajat')),
   nume text not null,
+  sectie_id uuid,
+  schimb_id uuid,
   created_at timestamptz default now()
 );
 
@@ -1994,6 +2010,14 @@ function openOrgModal(id,parentId){
   const secSel=document.getElementById('ang-sectie');
   secSel.innerHTML='<option value="">— nealocat —</option>'+allSectii.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
 
+  // Secție condusă (pentru Manager) și schimb coordonat (pentru Șef Formație)
+  const secCondusaSel=document.getElementById('org-sectie-condusa');
+  secCondusaSel.innerHTML='<option value="">— selectează secția —</option>'+allSectii.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
+  secCondusaSel.value=node?.sectie_id||'';
+  const schimbCoordSel=document.getElementById('org-schimb-coordonat');
+  schimbCoordSel.innerHTML='<option value="">— selectează schimbul —</option>'+allSchimburi.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
+  schimbCoordSel.value=node?.schimb_id||'';
+
   // Date angajat / nod
   if(ang){
     document.getElementById('ang-prenume').value=ang.prenume||'';
@@ -2024,12 +2048,15 @@ function openOrgModal(id,parentId){
     document.getElementById('ang-create-cont').checked=false;
     toggleContFields();
   } else {
-    ['ang-prenume','ang-nume-fam','ang-nr-mat','ang-functie','ang-username','ang-pass'].forEach(x=>document.getElementById(x).value='');
+    ['ang-prenume','ang-nume-fam','ang-nr-mat','ang-functie'].forEach(x=>document.getElementById(x).value='');
     document.getElementById('ang-schimb').value='';
     document.getElementById('ang-sectie').value='';
     document.getElementById('ang-data-ang').value='';
     document.getElementById('ang-zile-co').value=21;
-    document.getElementById('ang-create-cont').checked=false;
+    document.getElementById('ang-username').value='';
+    document.getElementById('ang-pass').value='Team';
+    document.getElementById('ang-rol').value='user';
+    document.getElementById('ang-create-cont').checked=true;
     toggleContFields();
   }
   openModal('modal-org');
@@ -2040,12 +2067,66 @@ function getNodeDepth(id,depth=0){
   if(!node||!node.parent_id) return depth;
   return getNodeDepth(node.parent_id,depth+1);
 }
+
+// Caută în lanțul de ascendenți cea mai apropiată secție setată pe un nod Manager
+function findInheritedSectie(parentNodeId){
+  let cur=parentNodeId;
+  while(cur){
+    const node=allOrgNodes.find(n=>n.id===cur);
+    if(!node) break;
+    if(node.tip==='manager'&&node.sectie_id) return node.sectie_id;
+    cur=node.parent_id;
+  }
+  return null;
+}
+// Caută în lanțul de ascendenți cel mai apropiat schimb setat pe un nod Șef Formație
+function findInheritedSchimb(parentNodeId){
+  let cur=parentNodeId;
+  while(cur){
+    const node=allOrgNodes.find(n=>n.id===cur);
+    if(!node) break;
+    if(node.tip==='sef_formatie'&&node.schimb_id) return node.schimb_id;
+    cur=node.parent_id;
+  }
+  return null;
+}
+// Re-propagă secția/schimbul la toți angajații din subarbore (apelat când Manager/Șef Formație își schimbă secția/schimbul)
+async function repropagaSubordonati(nodeId,sectieId,schimbId){
+  const children=allOrgNodes.filter(n=>n.parent_id===nodeId);
+  for(const ch of children){
+    if(ch.tip==='angajat'){
+      const ang=allAngajati.find(a=>a.org_node_id===ch.id);
+      if(ang){
+        const upd={};
+        if(sectieId!==undefined) upd.sectie_id=sectieId;
+        if(schimbId!==undefined) upd.schimb_id=schimbId;
+        if(Object.keys(upd).length) await sb.from('angajati').update(upd).eq('id',ang.id);
+      }
+      await repropagaSubordonati(ch.id,sectieId,schimbId);
+    } else if(ch.tip==='manager'){
+      // un Manager cu propria secție setată întrerupe propagarea secției (dar nu a schimbului)
+      await repropagaSubordonati(ch.id,ch.sectie_id?undefined:sectieId,schimbId);
+    } else if(ch.tip==='sef_formatie'){
+      // un Șef Formație cu propriul schimb setat întrerupe propagarea schimbului (dar nu a secției)
+      await repropagaSubordonati(ch.id,sectieId,ch.schimb_id?undefined:schimbId);
+    } else {
+      await repropagaSubordonati(ch.id,sectieId,schimbId);
+    }
+  }
+}
+
 function selectOrgTip(tip){
   document.getElementById('org-tip').value=tip;
   document.querySelectorAll('.org-tip-btn').forEach(b=>b.classList.toggle('active',b.dataset.tip===tip));
   // Câmpuri extra doar pt angajat
   const extraEl=document.getElementById('angajat-extra');
   if(extraEl) extraEl.style.display=tip==='angajat'?'block':'none';
+  // Câmp Manager -> selector secție condusă
+  const mgrField=document.getElementById('manager-sectie-field');
+  if(mgrField) mgrField.style.display=tip==='manager'?'block':'none';
+  // Câmp Șef Formație -> selector schimb coordonat
+  const sefField=document.getElementById('sef-schimb-field');
+  if(sefField) sefField.style.display=tip==='sef_formatie'?'block':'none';
   // Placeholder dinamic pentru câmpul Prenume/Nume
   const preEl=document.getElementById('ang-prenume');
   const numEl=document.getElementById('ang-nume-fam');
@@ -2060,6 +2141,20 @@ function toggleContFields(){
   const show=document.getElementById('ang-create-cont').checked;
   document.getElementById('cont-fields').style.display=show?'block':'none';
 }
+function autoGenUsername(){
+  // Doar pentru angajat nou (fără cont existent deja salvat) - nu suprascrie un username deja stabilit la editare
+  if(editingOrgId){
+    const existingAng=allAngajati.find(a=>a.org_node_id===editingOrgId);
+    const existingUser=existingAng?allProfiles.find(p=>p.angajat_id===existingAng.id):null;
+    if(existingUser) return; // angajat cu cont existent - nu regenerăm automat
+  }
+  const prenume=document.getElementById('ang-prenume').value.trim().toLowerCase();
+  const numeFam=document.getElementById('ang-nume-fam').value.trim().toLowerCase();
+  if(!prenume&&!numeFam) return;
+  const norm=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z]/g,'');
+  const username=[norm(prenume),norm(numeFam)].filter(Boolean).join('.');
+  document.getElementById('ang-username').value=username;
+}
 async function saveOrgNode(){
   const tip=document.getElementById('org-tip').value;
   if(!tip){toast('Selectează tipul nodului','error');return;}
@@ -2073,33 +2168,64 @@ async function saveOrgNode(){
   if(!numeFam){toast('Numele este obligatoriu','error');return;}
   if(!functie){toast('Funcția este obligatorie','error');return;}
 
+  // Validare câmpuri speciale Manager / Șef Formație
+  let nodeSectieId=null,nodeSchimbId=null;
+  if(tip==='manager'){
+    nodeSectieId=document.getElementById('org-sectie-condusa').value||null;
+    if(!nodeSectieId){toast('Selectează secția condusă de acest manager','error');return;}
+  }
+  if(tip==='sef_formatie'){
+    nodeSchimbId=document.getElementById('org-schimb-coordonat').value||null;
+    if(!nodeSchimbId){toast('Selectează schimbul coordonat de acest șef de formație','error');return;}
+  }
+
   const ini=initiala?initiala+' ':'';
   const nume=`${prenume} ${ini}${numeFam}`.trim();
 
   let nodeId=editingOrgId;
+  let oldSectieId=null,oldSchimbId=null;
   if(nodeId){
-    const {error}=await sb.from('org_nodes').update({tip,nume,parent_id}).eq('id',nodeId);
+    const oldNode=allOrgNodes.find(n=>n.id===nodeId);
+    oldSectieId=oldNode?.sectie_id||null;
+    oldSchimbId=oldNode?.schimb_id||null;
+    const {error}=await sb.from('org_nodes').update({tip,nume,parent_id,sectie_id:nodeSectieId,schimb_id:nodeSchimbId}).eq('id',nodeId);
     if(error){toast('Eroare: '+error.message,'error');return;}
   } else {
-    const {data,error}=await sb.from('org_nodes').insert({tip,nume,parent_id}).select().single();
+    const {data,error}=await sb.from('org_nodes').insert({tip,nume,parent_id,sectie_id:nodeSectieId,schimb_id:nodeSchimbId}).select().single();
     if(error){toast('Eroare: '+error.message,'error');return;}
     nodeId=data?.id;
   }
 
-  // Dacă e angajat — salvăm și datele angajatului
+  // Dacă e Manager sau Șef Formație și secția/schimbul s-au schimbat, propagăm la subordonați
+  if(tip==='manager'&&nodeSectieId!==oldSectieId){
+    await loadOrgNodes();await loadAngajati();
+    await repropagaSubordonati(nodeId,nodeSectieId,undefined);
+  }
+  if(tip==='sef_formatie'&&nodeSchimbId!==oldSchimbId){
+    await loadOrgNodes();await loadAngajati();
+    await repropagaSubordonati(nodeId,undefined,nodeSchimbId);
+  }
+
+  // Dacă e angajat — salvăm și datele angajatului, cu auto-repartizare secție/schimb din ascendenți
   if(tip==='angajat'&&nodeId){
     const nr_matricol=document.getElementById('ang-nr-mat').value.trim()||null;
-    const schimb_id=document.getElementById('ang-schimb').value||null;
-    const sectie_id=document.getElementById('ang-sectie').value||null;
-    const data_angajare=document.getElementById('ang-data-ang').value||null;
+    const dataAngajare=document.getElementById('ang-data-ang').value||null;
     const zile_co=parseInt(document.getElementById('ang-zile-co').value)||21;
+
+    // Secție/schimb: dacă userul a ales manual în dropdown, respectăm alegerea;
+    // altfel auto-completăm din ascendenții (Manager Secție -> secție, Șef Formație -> schimb)
+    let schimb_id=document.getElementById('ang-schimb').value||null;
+    let sectie_id=document.getElementById('ang-sectie').value||null;
+    if(!sectie_id) sectie_id=findInheritedSectie(parent_id);
+    if(!schimb_id) schimb_id=findInheritedSchimb(parent_id);
+
     const existingAng=allAngajati.find(a=>a.org_node_id===nodeId);
     let angId;
     if(existingAng){
-      await sb.from('angajati').update({prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare,zile_co}).eq('id',existingAng.id);
+      await sb.from('angajati').update({prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare:dataAngajare,zile_co}).eq('id',existingAng.id);
       angId=existingAng.id;
     } else {
-      const {data}=await sb.from('angajati').insert({org_node_id:nodeId,prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare,zile_co,activ:true}).select().single();
+      const {data}=await sb.from('angajati').insert({org_node_id:nodeId,prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare:dataAngajare,zile_co,activ:true}).select().single();
       angId=data?.id;
     }
     // Cont utilizator — doar dacă checkbox-ul e bifat
@@ -2109,13 +2235,21 @@ async function saveOrgNode(){
       const pass=document.getElementById('ang-pass').value;
       const rol=document.getElementById('ang-rol').value;
       if(!username||!pass){toast('Completează username și parola pentru cont','error');return;}
-      const {data:rpc,error:rpcErr}=await sb.rpc('admin_create_user',{
-        p_email:username+'@pontaj.intern',p_password:pass,
-        p_username:username,p_full_name:(prenume+' '+numeFam).trim(),
-        p_role:rol,p_angajat_id:angId
-      });
-      if(rpcErr||!rpc?.success) toast('Profil salvat, eroare cont: '+(rpcErr?.message||rpc?.error),'warn');
-      else toast('Cont creat pentru '+username+'!','success');
+      const existingUser=allProfiles.find(p=>p.angajat_id===angId);
+      if(existingUser){
+        // utilizator existent -> doar update profil (+parolă dacă s-a introdus una nouă)
+        await sb.from('profiles').update({username,full_name:(prenume+' '+numeFam).trim(),role:rol}).eq('id',existingUser.id);
+        if(pass) await sb.rpc('admin_set_password',{p_user_id:existingUser.id,p_password:pass});
+        toast('Cont actualizat pentru '+username+'!','success');
+      } else {
+        const {data:rpc,error:rpcErr}=await sb.rpc('admin_create_user',{
+          p_email:username+'@pontaj.intern',p_password:pass,
+          p_username:username,p_full_name:(prenume+' '+numeFam).trim(),
+          p_role:rol,p_angajat_id:angId
+        });
+        if(rpcErr||!rpc?.success) toast('Profil salvat, eroare cont: '+(rpcErr?.message||rpc?.error),'warn');
+        else toast('Cont creat pentru '+username+'!','success');
+      }
     }
   }
 
