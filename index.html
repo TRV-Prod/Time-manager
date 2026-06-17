@@ -684,13 +684,6 @@ tr:hover td{background:var(--slate-ll)}
         <div style="font-size:11px;color:var(--text3);margin-top:4px">Toți angajații subordonați acestui manager vor fi repartizați automat în această secție.</div>
       </div>
 
-      <!-- Câmp special: Șef Formație coordonează un schimb -->
-      <div id="sef-schimb-field" class="form-group" style="display:none">
-        <label class="form-label">Schimb coordonat <span style="color:var(--red)">*</span></label>
-        <select id="org-schimb-coordonat" class="form-control"><option value="">— selectează schimbul —</option></select>
-        <div style="font-size:11px;color:var(--text3);margin-top:4px">Toți angajații subordonați acestui șef de formație vor fi repartizați automat pe acest schimb.</div>
-      </div>
-
       <!-- Câmpuri extra doar pentru angajat -->
       <div id="angajat-extra" style="display:none">
         <div class="form-row">
@@ -2024,13 +2017,10 @@ function openOrgModal(id,parentId){
   const secSel=document.getElementById('ang-sectie');
   secSel.innerHTML='<option value="">— nealocat —</option>'+allSectii.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
 
-  // Secție condusă (pentru Manager) și schimb coordonat (pentru Șef Formație)
+  // Secție condusă (pentru Manager)
   const secCondusaSel=document.getElementById('org-sectie-condusa');
   secCondusaSel.innerHTML='<option value="">— selectează secția —</option>'+allSectii.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
   secCondusaSel.value=node?.sectie_id||'';
-  const schimbCoordSel=document.getElementById('org-schimb-coordonat');
-  schimbCoordSel.innerHTML='<option value="">— selectează schimbul —</option>'+allSchimburi.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
-  schimbCoordSel.value=node?.schimb_id||'';
 
   // Date persoană (Prenume/Nume/Funcție/Secție/Schimb/Cont) — la fel pentru orice tip de nod
   if(ang){
@@ -2124,9 +2114,6 @@ function selectOrgTip(tip){
   // Câmp Manager -> selector secție condusă
   const mgrField=document.getElementById('manager-sectie-field');
   if(mgrField) mgrField.style.display=tip==='manager'?'block':'none';
-  // Câmp Șef Formație -> selector schimb coordonat
-  const sefField=document.getElementById('sef-schimb-field');
-  if(sefField) sefField.style.display=tip==='sef_formatie'?'block':'none';
   // Placeholder dinamic pentru câmpul Prenume/Nume
   const preEl=document.getElementById('ang-prenume');
   const numEl=document.getElementById('ang-nume-fam');
@@ -2170,15 +2157,11 @@ async function saveOrgNode(){
   if(!numeFam){toast('Numele este obligatoriu','error');return;}
   if(!functie){toast('Funcția este obligatorie','error');return;}
 
-  // Validare câmpuri speciale Manager / Șef Formație
-  let nodeSectieId=null,nodeSchimbId=null;
+  // Validare câmp special Manager (secție condusă)
+  let nodeSectieId=null;
   if(tip==='manager'){
     nodeSectieId=document.getElementById('org-sectie-condusa').value||null;
     if(!nodeSectieId){toast('Selectează secția condusă de acest manager','error');return;}
-  }
-  if(tip==='sef_formatie'){
-    nodeSchimbId=document.getElementById('org-schimb-coordonat').value||null;
-    if(!nodeSchimbId){toast('Selectează schimbul coordonat de acest șef de formație','error');return;}
   }
 
   const ini=initiala?initiala+' ':'';
@@ -2189,10 +2172,10 @@ async function saveOrgNode(){
   if(nodeId){
     const oldNode=allOrgNodes.find(n=>n.id===nodeId);
     oldSectieId=oldNode?.sectie_id||null;
-    const {error}=await sb.from('org_nodes').update({tip,nume,parent_id,sectie_id:nodeSectieId,schimb_id:nodeSchimbId}).eq('id',nodeId);
+    const {error}=await sb.from('org_nodes').update({tip,nume,parent_id,sectie_id:nodeSectieId,schimb_id:null}).eq('id',nodeId);
     if(error){toast('Eroare: '+error.message,'error');return;}
   } else {
-    const {data,error}=await sb.from('org_nodes').insert({tip,nume,parent_id,sectie_id:nodeSectieId,schimb_id:nodeSchimbId}).select().single();
+    const {data,error}=await sb.from('org_nodes').insert({tip,nume,parent_id,sectie_id:nodeSectieId,schimb_id:null}).select().single();
     if(error){toast('Eroare: '+error.message,'error');return;}
     nodeId=data?.id;
     editingOrgId=nodeId; // important: dacă retrimite formularul (ex. după eroare la creare cont), nu se mai duplică nodul
