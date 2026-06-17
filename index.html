@@ -630,6 +630,7 @@ tr:hover td{background:var(--slate-ll)}
       <button class="modal-close" onclick="closeModal('modal-org')">✕</button>
     </div>
     <div class="modal-body">
+      <div id="org-error-box" style="display:none;margin-bottom:1rem"></div>
       <input type="hidden" id="org-id"/>
 
       <!-- Tip nod — butoane vizuale -->
@@ -1994,6 +1995,7 @@ function renderAngajatDetail(nodeId){
 
 function openOrgModal(id,parentId){
   editingOrgId=id||null;
+  document.getElementById('org-error-box').style.display='none';
   document.getElementById('modal-org-title').textContent=id?'Editare nod organigramă':'Adaugă în organigramă';
   document.getElementById('org-del-btn').style.display=id?'inline-flex':'none';
   document.getElementById('org-id').value=id||'';
@@ -2211,6 +2213,9 @@ async function saveOrgNode(){
     const {data,error}=await sb.from('org_nodes').insert({tip,nume,parent_id,sectie_id:nodeSectieId,schimb_id:nodeSchimbId}).select().single();
     if(error){toast('Eroare: '+error.message,'error');return;}
     nodeId=data?.id;
+    editingOrgId=nodeId; // important: dacă retrimite formularul (ex. după eroare la creare cont), nu se mai duplică nodul
+    document.getElementById('org-id').value=nodeId;
+    document.getElementById('org-del-btn').style.display='inline-flex';
   }
 
   // Dacă e Manager sau Șef Formație și secția/schimbul s-au schimbat, propagăm la subordonați
@@ -2269,8 +2274,15 @@ async function saveOrgNode(){
         p_username:username,p_full_name:nume,
         p_role:rol,p_angajat_id:angId
       });
-      if(rpcErr||!rpc?.success) toast('Nod salvat, eroare cont: '+(rpcErr?.message||rpc?.error),'warn');
-      else toast('Cont creat pentru '+username+'!','success');
+      if(rpcErr||!rpc?.success){
+        const msg=rpcErr?.message||rpc?.error||'eroare necunoscută';
+        toast('Eroare la creare cont: '+msg,'error');
+        showOrgError('Angajatul a fost salvat, dar contul NU a putut fi creat.<br><b>Motiv:</b> '+msg+'<br><br>Poți corecta username-ul/parola și apăsa din nou Salvează — angajatul nu va fi duplicat.');
+        await Promise.all([loadOrgNodes(),loadAngajati(),loadProfiles()]);
+        renderOrgTree();
+        return; // nu închidem modalul, ca să poți corecta
+      }
+      toast('Cont creat pentru '+username+'!','success');
     }
   } else {
     toast('Salvat cu succes!','success');
@@ -2536,6 +2548,11 @@ function toast(msg,type='info'){
   const el=document.createElement('div');el.className='toast-item '+type;
   el.textContent=msg;document.getElementById('toast').appendChild(el);
   setTimeout(()=>el.remove(),3800);
+}
+function showOrgError(html){
+  const box=document.getElementById('org-error-box');
+  box.innerHTML=`<div class="alert alert-danger">⚠️ ${html}</div>`;
+  box.style.display='block';
 }
 function angNume(ang){if(!ang)return'—';const ini=ang.initiala?ang.initiala+' ':'';return `${ang.prenume||''} ${ini}${ang.nume||''}`.trim();}
 function fmtDate(d){if(!d)return'—';try{return new Date(d+'T00:00:00').toLocaleDateString('ro-RO');}catch{return d;}}
