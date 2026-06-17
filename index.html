@@ -581,21 +581,21 @@ tr:hover td{background:var(--slate-ll)}
       <div class="form-row">
         <div class="form-group" style="flex:2">
           <label class="form-label">Prenume <span style="color:var(--red)">*</span></label>
-          <input id="ang-prenume" class="form-control" placeholder="Ion"/>
+          <input id="ang-prenume" class="form-control" placeholder=""/>
         </div>
         <div class="form-group" style="flex:1">
           <label class="form-label">Inițiala</label>
-          <input id="ang-initiala" class="form-control" placeholder="C" maxlength="3" style="text-transform:uppercase"/>
+          <input id="ang-initiala" class="form-control" placeholder="" maxlength="3" style="text-transform:uppercase;width:70px;flex:none"/>
         </div>
         <div class="form-group" style="flex:2">
           <label class="form-label">Nume <span style="color:var(--red)">*</span></label>
-          <input id="ang-nume-fam" class="form-control" placeholder="Popescu"/>
+          <input id="ang-nume-fam" class="form-control" placeholder=""/>
         </div>
       </div>
 
       <div class="form-group">
         <label class="form-label">Funcție <span style="color:var(--red)">*</span></label>
-        <input id="ang-functie" class="form-control" placeholder="Operator CNC, Director General, Manager Producție..."/>
+        <input id="ang-functie" class="form-control" placeholder=""/>
       </div>
 
       <!-- Câmpuri extra doar pentru angajat -->
@@ -1680,16 +1680,8 @@ function selectOrgTip(tip){
   // Placeholder dinamic pentru câmpul Prenume/Nume
   const preEl=document.getElementById('ang-prenume');
   const numEl=document.getElementById('ang-nume-fam');
-  const placeholders={
-    director:['Director','General, ex: Ion Popescu'],
-    manager_dep:['Manager','Departament, ex: Ion Popescu'],
-    manager:['Manager','Secție, ex: Ion Popescu'],
-    sef_formatie:['Șef','Formație, ex: Ion Popescu'],
-    angajat:['Prenume','Nume familie']
-  };
-  const [ph1,ph2]=placeholders[tip]||['Prenume','Nume'];
-  if(preEl) preEl.placeholder=ph1;
-  if(numEl) numEl.placeholder=ph2;
+  if(preEl) preEl.placeholder='';
+  if(numEl) numEl.placeholder='';
 }
 function toggleAngajatFields(){
   // păstrat pentru compatibilitate
@@ -1831,12 +1823,38 @@ async function addSarbatoare(){
   toast('Adăugat','success');await loadSarbatori(an);renderSarbatori();
 }
 async function deleteSarbatoare(id){await sb.from('sarbatori_legale').delete().eq('id',id);const an=parseInt(document.getElementById('sarb-an').value);await loadSarbatori(an);renderSarbatori();}
+// Calculează data Paștelui ortodox pentru un an dat (algoritm Meeus - calendar iulian, convertit la gregorian)
+function calculeazaPasteOrtodox(an){
+  const a=an%4, b=an%7, c=an%19;
+  const d=(19*c+15)%30, e=(2*a+4*b-d+34)%7;
+  const luna=Math.floor((d+e+114)/31); // 3=martie, 4=aprilie (calendar iulian)
+  const zi=((d+e+114)%31)+1;
+  // Data calculată e în calendar iulian -> adăugăm 13 zile pentru gregorian (sec. XX-XXI)
+  const dataIuliana=new Date(an,luna-1,zi);
+  dataIuliana.setDate(dataIuliana.getDate()+13);
+  return dataIuliana;
+}
+function addDays(date,days){const d=new Date(date);d.setDate(d.getDate()+days);return d;}
+function toISO(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+
 async function importSarbatoriRO(){
   const an=parseInt(document.getElementById('sarb-an').value);
-  const list=[['01-01','Anul Nou (1)'],['01-02','Anul Nou (2)'],['01-06','Boboteaza'],['01-07','Sf. Ioan Botezătorul'],['01-24','Ziua Unirii'],['04-18','Vinerea Mare'],['04-20','Paște (1)'],['04-21','Paște (2)'],['05-01','Ziua Muncii'],['06-01','Ziua Copilului'],['06-08','Rusalii (1)'],['06-09','Rusalii (2)'],['08-15','Sf. Maria Mare'],['11-30','Sf. Andrei'],['12-01','Ziua Națională'],['12-25','Crăciun (1)'],['12-26','Crăciun (2)']];
-  const rows=list.map(([d,n])=>({data:an+'-'+d,denumire:n,an}));
+  const paste=calculeazaPasteOrtodox(an);
+  const vinereaMare=addDays(paste,-2);
+  const pasteLuni=addDays(paste,1);
+  const rusaliiDuminica=addDays(paste,49);
+  const rusaliiLuni=addDays(paste,50);
+
+  const listFixe=[['01-01','Anul Nou (1)'],['01-02','Anul Nou (2)'],['01-06','Boboteaza'],['01-07','Sf. Ioan Botezătorul'],['01-24','Ziua Unirii'],['05-01','Ziua Muncii'],['06-01','Ziua Copilului'],['08-15','Sf. Maria Mare'],['11-30','Sf. Andrei'],['12-01','Ziua Națională'],['12-25','Crăciun (1)'],['12-26','Crăciun (2)']];
+  const rows=listFixe.map(([d,n])=>({data:an+'-'+d,denumire:n,an}));
+  rows.push({data:toISO(vinereaMare),denumire:'Vinerea Mare',an});
+  rows.push({data:toISO(paste),denumire:'Paștele Ortodox',an});
+  rows.push({data:toISO(pasteLuni),denumire:'A doua zi de Paște',an});
+  rows.push({data:toISO(rusaliiDuminica),denumire:'Rusalii',an});
+  rows.push({data:toISO(rusaliiLuni),denumire:'A doua zi de Rusalii',an});
+
   const {error}=await sb.from('sarbatori_legale').upsert(rows,{onConflict:'data',ignoreDuplicates:true});
-  if(error)toast('Unele date există deja','warn');else toast('Sărbători '+an+' importate!','success');
+  if(error)toast('Unele date există deja','warn');else toast('Sărbători '+an+' importate (Paște ortodox: '+fmtDate(toISO(paste))+')!','success');
   await loadSarbatori(an);renderSarbatori();
 }
 function renderSectiiCalendar(){
