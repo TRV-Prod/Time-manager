@@ -894,7 +894,7 @@ create table if not exists public.org_nodes (
 -- Angajați
 create table if not exists public.angajati (
   id uuid primary key default uuid_generate_v4(),
-  org_node_id uuid references public.org_nodes(id) on delete set null,
+  org_node_id uuid references public.org_nodes(id) on delete set null unique,
   sectie_id uuid,
   nr_matricol text,
   prenume text not null,
@@ -2240,10 +2240,11 @@ async function saveOrgNode(){
     if(!sectie_id) sectie_id=tip==='manager'?nodeSectieId:findInheritedSectie(parent_id);
     if(!schimb_id) schimb_id=tip==='sef_formatie'?nodeSchimbId:findInheritedSchimb(parent_id);
 
-    const existingAng=allAngajati.find(a=>a.org_node_id===nodeId);
-    if(existingAng){
-      await sb.from('angajati').update({prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare:dataAngajare,zile_co}).eq('id',existingAng.id);
-      angId=existingAng.id;
+    // Căutăm direct în DB (nu din cache local) ca să evităm crearea de duplicate
+    const {data:existingAngData}=await sb.from('angajati').select('id').eq('org_node_id',nodeId).maybeSingle();
+    if(existingAngData){
+      await sb.from('angajati').update({prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare:dataAngajare,zile_co}).eq('id',existingAngData.id);
+      angId=existingAngData.id;
     } else {
       const {data}=await sb.from('angajati').insert({org_node_id:nodeId,prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare:dataAngajare,zile_co,activ:true}).select().single();
       angId=data?.id;
