@@ -916,6 +916,7 @@ create table if not exists public.profiles (
   role text not null default 'user' check (role in ('user','admin','developer')),
   permissions jsonb default '{}'::jsonb,
   angajat_id uuid references public.angajati(id) on delete set null,
+  org_node_id uuid references public.org_nodes(id) on delete set null,
   activ boolean default true,
   created_at timestamptz default now()
 );
@@ -1038,7 +1039,7 @@ create trigger on_auth_user_created after insert on auth.users
 create or replace function public.admin_create_user(
   p_email text, p_password text, p_username text, p_full_name text,
   p_role text default 'user', p_angajat_id uuid default null,
-  p_permissions jsonb default '{}'::jsonb
+  p_permissions jsonb default '{}'::jsonb, p_org_node_id uuid default null
 ) returns json language plpgsql security definer as $$
 declare v_user_id uuid;
 begin
@@ -1059,9 +1060,9 @@ begin
     '{"provider":"email","providers":["email"]}'::jsonb,
     false,'','','',''
   ) returning id into v_user_id;
-  insert into public.profiles(id,username,full_name,role,angajat_id,permissions,activ)
-  values(v_user_id,p_username,p_full_name,p_role,p_angajat_id,p_permissions,true)
-  on conflict(id) do update set username=p_username,full_name=p_full_name,role=p_role,angajat_id=p_angajat_id,permissions=p_permissions;
+  insert into public.profiles(id,username,full_name,role,angajat_id,org_node_id,permissions,activ)
+  values(v_user_id,p_username,p_full_name,p_role,p_angajat_id,p_org_node_id,p_permissions,true)
+  on conflict(id) do update set username=p_username,full_name=p_full_name,role=p_role,angajat_id=p_angajat_id,org_node_id=p_org_node_id,permissions=p_permissions;
   return json_build_object('success',true,'user_id',v_user_id);
 exception when others then
   return json_build_object('success',false,'error',SQLERRM);
@@ -2053,11 +2054,24 @@ function openOrgModal(id,parentId){
       toggleContFields();
     }
   } else if(node){
-    // Nod non-angajat: pune numele în câmpul Nume
+    // Nod non-angajat existent: pune numele/prenume separat dacă a fost salvat ca "Prenume Inițială Nume"
     document.getElementById('ang-nume-fam').value=node.nume||'';
     document.getElementById('ang-prenume').value='';
     document.getElementById('ang-functie').value='';
-    document.getElementById('ang-create-cont').checked=false;
+    document.getElementById('ang-schimb').value='';
+    document.getElementById('ang-sectie').value='';
+    const user=allProfiles.find(p=>p.org_node_id===node.id);
+    if(user){
+      document.getElementById('ang-create-cont').checked=true;
+      document.getElementById('ang-username').value=user.username||'';
+      document.getElementById('ang-pass').value='';
+      document.getElementById('ang-rol').value=user.role||'user';
+    } else {
+      document.getElementById('ang-create-cont').checked=true;
+      document.getElementById('ang-username').value='';
+      document.getElementById('ang-pass').value='Team';
+      document.getElementById('ang-rol').value='user';
+    }
     toggleContFields();
   } else {
     ['ang-prenume','ang-nume-fam','ang-nr-mat','ang-functie'].forEach(x=>document.getElementById(x).value='');
@@ -2154,11 +2168,13 @@ function toggleContFields(){
   document.getElementById('cont-fields').style.display=show?'block':'none';
 }
 function autoGenUsername(){
-  // Doar pentru angajat nou (fără cont existent deja salvat) - nu suprascrie un username deja stabilit la editare
+  // Nu suprascrie un username deja stabilit, dacă nodul/angajatul are deja un cont existent
   if(editingOrgId){
     const existingAng=allAngajati.find(a=>a.org_node_id===editingOrgId);
-    const existingUser=existingAng?allProfiles.find(p=>p.angajat_id===existingAng.id):null;
-    if(existingUser) return; // angajat cu cont existent - nu regenerăm automat
+    const existingUser=existingAng
+      ?allProfiles.find(p=>p.angajat_id===existingAng.id)
+      :allProfiles.find(p=>p.org_node_id===editingOrgId);
+    if(existingUser) return;
   }
   const prenume=document.getElementById('ang-prenume').value.trim().toLowerCase();
   const numeFam=document.getElementById('ang-nume-fam').value.trim().toLowerCase();
@@ -2219,6 +2235,7 @@ async function saveOrgNode(){
   }
 
   // Dacă e angajat — salvăm și datele angajatului, cu auto-repartizare secție/schimb din ascendenți
+  let angId=null;
   if(tip==='angajat'&&nodeId){
     const nr_matricol=document.getElementById('ang-nr-mat').value.trim()||null;
     const dataAngajare=document.getElementById('ang-data-ang').value||null;
@@ -2232,7 +2249,6 @@ async function saveOrgNode(){
     if(!schimb_id) schimb_id=findInheritedSchimb(parent_id);
 
     const existingAng=allAngajati.find(a=>a.org_node_id===nodeId);
-    let angId;
     if(existingAng){
       await sb.from('angajati').update({prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare:dataAngajare,zile_co}).eq('id',existingAng.id);
       angId=existingAng.id;
@@ -2240,32 +2256,38 @@ async function saveOrgNode(){
       const {data}=await sb.from('angajati').insert({org_node_id:nodeId,prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare:dataAngajare,zile_co,activ:true}).select().single();
       angId=data?.id;
     }
-    // Cont utilizator — doar dacă checkbox-ul e bifat
-    const createCont=document.getElementById('ang-create-cont').checked;
-    if(createCont&&angId){
-      const username=document.getElementById('ang-username').value.trim().toLowerCase().replace(/\s+/g,'.');
-      const pass=document.getElementById('ang-pass').value;
-      const rol=document.getElementById('ang-rol').value;
-      if(!username||!pass){toast('Completează username și parola pentru cont','error');return;}
-      const existingUser=allProfiles.find(p=>p.angajat_id===angId);
-      if(existingUser){
-        // utilizator existent -> doar update profil (+parolă dacă s-a introdus una nouă)
-        await sb.from('profiles').update({username,full_name:(prenume+' '+numeFam).trim(),role:rol}).eq('id',existingUser.id);
-        if(pass) await sb.rpc('admin_set_password',{p_user_id:existingUser.id,p_password:pass});
-        toast('Cont actualizat pentru '+username+'!','success');
-      } else {
-        const {data:rpc,error:rpcErr}=await sb.rpc('admin_create_user',{
-          p_email:username+'@pontaj.intern',p_password:pass,
-          p_username:username,p_full_name:(prenume+' '+numeFam).trim(),
-          p_role:rol,p_angajat_id:angId
-        });
-        if(rpcErr||!rpc?.success) toast('Profil salvat, eroare cont: '+(rpcErr?.message||rpc?.error),'warn');
-        else toast('Cont creat pentru '+username+'!','success');
-      }
-    }
   }
 
-  toast((tip==='angajat'?'Angajat':'Nod')+' salvat cu succes!','success');
+  // Cont utilizator — disponibil pentru ORICE tip de nod (Director, Manager, Șef Formație, Angajat),
+  // doar dacă checkbox-ul e bifat
+  const createCont=document.getElementById('ang-create-cont').checked;
+  if(createCont&&nodeId){
+    const username=document.getElementById('ang-username').value.trim().toLowerCase().replace(/\s+/g,'.');
+    const pass=document.getElementById('ang-pass').value;
+    const rol=document.getElementById('ang-rol').value;
+    if(!username||!pass){toast('Completează username și parola pentru cont','error');return;}
+    // Pentru angajat căutăm contul după angajat_id; pentru restul tipurilor, după org_node_id
+    const existingUser=tip==='angajat'
+      ?allProfiles.find(p=>p.angajat_id===angId)
+      :allProfiles.find(p=>p.org_node_id===nodeId);
+    if(existingUser){
+      await sb.from('profiles').update({username,full_name:nume,role:rol}).eq('id',existingUser.id);
+      if(pass) await sb.rpc('admin_set_password',{p_user_id:existingUser.id,p_password:pass});
+      toast('Cont actualizat pentru '+username+'!','success');
+    } else {
+      const {data:rpc,error:rpcErr}=await sb.rpc('admin_create_user',{
+        p_email:username+'@pontaj.intern',p_password:pass,
+        p_username:username,p_full_name:nume,
+        p_role:rol,p_angajat_id:tip==='angajat'?angId:null,
+        p_org_node_id:tip==='angajat'?null:nodeId
+      });
+      if(rpcErr||!rpc?.success) toast('Nod salvat, eroare cont: '+(rpcErr?.message||rpc?.error),'warn');
+      else toast('Cont creat pentru '+username+'!','success');
+    }
+  } else {
+    toast((tip==='angajat'?'Angajat':'Nod')+' salvat cu succes!','success');
+  }
+
   closeModal('modal-org');
   await Promise.all([loadOrgNodes(),loadAngajati(),loadProfiles()]);
   renderOrgTree();
@@ -2446,6 +2468,8 @@ function renderUtilizatori(){
   }
   document.getElementById('util-tbody').innerHTML=users.map(u=>{
     const ang=allAngajati.find(a=>a.id===u.angajat_id);
+    const orgNode=!ang&&u.org_node_id?allOrgNodes.find(n=>n.id===u.org_node_id):null;
+    const asociat=ang?angNume(ang):(orgNode?`${ORG_TIP_ICONS[orgNode.tip]||''} ${orgNode.nume}`:null);
     const ini=(u.full_name||u.username||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const isSelf=u.id===currentProfile?.id;
     const avBg={developer:'var(--purple-l)',admin:'var(--orange-l)',user:'var(--navy-ll)'};
@@ -2457,7 +2481,7 @@ function renderUtilizatori(){
         <div style="font-size:11px;color:var(--text3)">@${u.username}</div></div>
       </div></td>
       <td><span class="badge ${rBadge[u.role]||'badge-navy'}">${rLabel[u.role]||u.role}</span></td>
-      <td>${ang?angNume(ang):'<span style="color:var(--text3)">—</span>'}</td>
+      <td>${asociat||'<span style="color:var(--text3)">—</span>'}</td>
       <td><span class="badge ${u.activ?'badge-green':'badge-red'}">${u.activ?'Activ':'Inactiv'}</span></td>
       <td><button class="btn btn-sm" onclick="openUtilizatorModal('${u.id}')">Editează</button></td></tr>`;
   }).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:1.5rem">Niciun utilizator găsit.</td></tr>';
