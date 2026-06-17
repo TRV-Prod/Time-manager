@@ -1079,6 +1079,18 @@ begin
 exception when others then return json_build_object('success',false,'error',SQLERRM);
 end;$$;
 
+-- Funcție RPC ștergere completă utilizator (auth.users + profiles, prin cascade)
+create or replace function public.admin_delete_user(p_user_id uuid)
+returns json language plpgsql security definer as $$
+begin
+  if not exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')) then
+    raise exception 'Acces interzis';
+  end if;
+  delete from auth.users where id=p_user_id;
+  return json_build_object('success',true);
+exception when others then return json_build_object('success',false,'error',SQLERRM);
+end;$$;
+
 -- ============================================================
 -- MIGRARE pentru baze de date existente (rulează separat dacă ai deja tabelele)
 -- ============================================================
@@ -2438,7 +2450,7 @@ function renderUtilizatori(){
     const isSelf=u.id===currentProfile?.id;
     const avBg={developer:'var(--purple-l)',admin:'var(--orange-l)',user:'var(--navy-ll)'};
     const avColor={developer:'var(--purple)',admin:'var(--orange-d)',user:'var(--navy)'};
-    return `<tr style="${isSelf?'background:var(--orange-l)':''}"}>
+    return `<tr style="${isSelf?'background:var(--orange-l)':''}">
       <td><div style="display:flex;align-items:center;gap:8px">
         <div class="ang-avatar" style="width:32px;height:32px;font-size:11px;background:${avBg[u.role]||'var(--navy-ll)'};color:${avColor[u.role]||'var(--navy)'}">${ini}</div>
         <div><div style="font-weight:500">${u.full_name}${isSelf?' <span style="font-size:10px;background:var(--orange);color:#fff;padding:1px 6px;border-radius:8px;font-weight:600">TU</span>':''}</div>
@@ -2497,7 +2509,8 @@ async function saveUtilizator(){
 }
 async function deleteUtilizator(){
   if(!editingUtilId||!confirm('Ștergi utilizatorul?')) return;
-  await sb.from('profiles').delete().eq('id',editingUtilId);
+  const {data,error}=await sb.rpc('admin_delete_user',{p_user_id:editingUtilId});
+  if(error||!data?.success){toast('Eroare la ștergere: '+(error?.message||data?.error||'necunoscută'),'error');return;}
   toast('Utilizator șters','success');closeModal('modal-utilizator');await loadProfiles();renderUtilizatori();
 }
 
