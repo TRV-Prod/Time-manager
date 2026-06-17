@@ -2095,38 +2095,21 @@ function findInheritedSectie(parentNodeId){
   }
   return null;
 }
-// Caută în lanțul de ascendenți cel mai apropiat schimb setat pe un nod Șef Formație
-function findInheritedSchimb(parentNodeId){
-  let cur=parentNodeId;
-  while(cur){
-    const node=allOrgNodes.find(n=>n.id===cur);
-    if(!node) break;
-    if(node.tip==='sef_formatie'&&node.schimb_id) return node.schimb_id;
-    cur=node.parent_id;
-  }
-  return null;
-}
-// Re-propagă secția/schimbul la toți angajații din subarbore (apelat când Manager/Șef Formație își schimbă secția/schimbul)
-async function repropagaSubordonati(nodeId,sectieId,schimbId){
+// Re-propagă secția la toți angajații din subarbore (apelat când un Manager își schimbă secția).
+// Schimbul NU se mai propagă automat: angajații au schimb fix (1/2/3), ales manual, indiferent
+// de eventuala rotație de schimburi a Șefului de Formație căruia sunt subordonați.
+async function repropagaSubordonati(nodeId,sectieId){
   const children=allOrgNodes.filter(n=>n.parent_id===nodeId);
   for(const ch of children){
     if(ch.tip==='angajat'){
       const ang=allAngajati.find(a=>a.org_node_id===ch.id);
-      if(ang){
-        const upd={};
-        if(sectieId!==undefined) upd.sectie_id=sectieId;
-        if(schimbId!==undefined) upd.schimb_id=schimbId;
-        if(Object.keys(upd).length) await sb.from('angajati').update(upd).eq('id',ang.id);
-      }
-      await repropagaSubordonati(ch.id,sectieId,schimbId);
+      if(ang&&sectieId!==undefined) await sb.from('angajati').update({sectie_id:sectieId}).eq('id',ang.id);
+      await repropagaSubordonati(ch.id,sectieId);
     } else if(ch.tip==='manager'){
-      // un Manager cu propria secție setată întrerupe propagarea secției (dar nu a schimbului)
-      await repropagaSubordonati(ch.id,ch.sectie_id?undefined:sectieId,schimbId);
-    } else if(ch.tip==='sef_formatie'){
-      // un Șef Formație cu propriul schimb setat întrerupe propagarea schimbului (dar nu a secției)
-      await repropagaSubordonati(ch.id,sectieId,ch.schimb_id?undefined:schimbId);
+      // un Manager cu propria secție setată întrerupe propagarea
+      await repropagaSubordonati(ch.id,ch.sectie_id?undefined:sectieId);
     } else {
-      await repropagaSubordonati(ch.id,sectieId,schimbId);
+      await repropagaSubordonati(ch.id,sectieId);
     }
   }
 }
@@ -2202,11 +2185,10 @@ async function saveOrgNode(){
   const nume=`${prenume} ${ini}${numeFam}`.trim();
 
   let nodeId=editingOrgId;
-  let oldSectieId=null,oldSchimbId=null;
+  let oldSectieId=null;
   if(nodeId){
     const oldNode=allOrgNodes.find(n=>n.id===nodeId);
     oldSectieId=oldNode?.sectie_id||null;
-    oldSchimbId=oldNode?.schimb_id||null;
     const {error}=await sb.from('org_nodes').update({tip,nume,parent_id,sectie_id:nodeSectieId,schimb_id:nodeSchimbId}).eq('id',nodeId);
     if(error){toast('Eroare: '+error.message,'error');return;}
   } else {
@@ -2218,14 +2200,11 @@ async function saveOrgNode(){
     document.getElementById('org-del-btn').style.display='inline-flex';
   }
 
-  // Dacă e Manager sau Șef Formație și secția/schimbul s-au schimbat, propagăm la subordonați
+  // Dacă e Manager și secția s-a schimbat, propagăm secția la subordonați.
+  // Șeful de Formație NU mai propagă schimbul — angajații au schimb fix, ales individual.
   if(tip==='manager'&&nodeSectieId!==oldSectieId){
     await loadOrgNodes();await loadAngajati();
-    await repropagaSubordonati(nodeId,nodeSectieId,undefined);
-  }
-  if(tip==='sef_formatie'&&nodeSchimbId!==oldSchimbId){
-    await loadOrgNodes();await loadAngajati();
-    await repropagaSubordonati(nodeId,undefined,nodeSchimbId);
+    await repropagaSubordonati(nodeId,nodeSectieId);
   }
 
   // Salvăm datele de angajat pentru ORICE tip de nod (Director, Manager, Șef Formație, Angajat) —
@@ -2236,14 +2215,12 @@ async function saveOrgNode(){
     const dataAngajare=document.getElementById('ang-data-ang').value||null;
     const zile_co=parseInt(document.getElementById('ang-zile-co').value)||21;
 
-    // Secție/schimb: dacă userul a ales manual în dropdown, respectăm alegerea;
-    // altfel auto-completăm din ascendenții (Manager Secție -> secție, Șef Formație -> schimb).
-    // Pentru un Manager, secția lui proprie (nodeSectieId) e folosită direct ca secție a propriului pontaj.
-    // Pentru un Șef Formație, schimbul lui propriu (nodeSchimbId) e folosit direct.
+    // Secție: dacă userul a ales manual în dropdown, respectăm alegerea; altfel auto-completăm
+    // din Managerul de Secție ascendent. Pentru un Manager, secția lui proprie e folosită direct.
+    // Schimbul NU se mai auto-completează din ascendenți — angajatul are schimb fix, ales manual aici.
     let schimb_id=document.getElementById('ang-schimb').value||null;
     let sectie_id=document.getElementById('ang-sectie').value||null;
     if(!sectie_id) sectie_id=tip==='manager'?nodeSectieId:findInheritedSectie(parent_id);
-    if(!schimb_id) schimb_id=tip==='sef_formatie'?nodeSchimbId:findInheritedSchimb(parent_id);
 
     // Căutăm direct în DB (nu din cache local) ca să evităm crearea de duplicate
     const {data:existingAngData}=await sb.from('angajati').select('id').eq('org_node_id',nodeId).maybeSingle();
