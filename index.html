@@ -147,6 +147,18 @@ tr:hover td{background:var(--slate-ll)}
 .org-node-sub{font-size:11px;color:var(--text3);margin-top:1px}
 .org-node-stats{display:flex;gap:4px;align-items:center;flex-shrink:0}
 .org-stat-pill{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--navy-ll);color:var(--navy)}
+
+/* Carduri grupate de angajați (operatori), gen organigramă pe echipe */
+.org-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;padding:10px 0 2px}
+.org-card-group{background:var(--navy-ll);border:1px solid var(--border);border-radius:var(--r2);padding:8px;display:flex;flex-direction:column;gap:5px}
+.org-card-group-title{font-size:11px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.03em;padding:2px 4px 4px;border-bottom:1px solid var(--border-d);margin-bottom:2px}
+.org-card-item{position:relative;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:6px 8px;cursor:pointer;transition:.12s}
+.org-card-item:hover{border-color:var(--orange);background:var(--orange-l)}
+.org-card-item.selected{border-color:var(--orange);background:var(--orange-l);box-shadow:0 0 0 1px var(--orange)}
+.org-card-item-name{font-size:12px;font-weight:600;color:var(--navy);padding-right:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.org-card-item-sub{font-size:10.5px;color:var(--text3);margin-top:1px}
+.org-card-item-edit{position:absolute;top:2px;right:2px;padding:2px 5px!important;opacity:0;transition:.12s}
+.org-card-item:hover .org-card-item-edit{opacity:1}
 .org-type-director{background:#ede9fe;color:#5b21b6}
 .org-type-manager_dep{background:#dbeafe;color:#1d4ed8}
 .org-type-manager{background:#e0f2fe;color:#0369a1}
@@ -686,6 +698,12 @@ tr:hover td{background:var(--slate-ll)}
 
       <!-- Câmpuri extra doar pentru angajat -->
       <div id="angajat-extra" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Grup / Echipă</label>
+          <input id="ang-grup" class="form-control" placeholder="ex: Operatori BENDING & PUNCHING" list="ang-grup-list"/>
+          <datalist id="ang-grup-list"></datalist>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">Folosit pentru gruparea pe carduri în organigramă. Angajații cu același nume de grup, subordonați aceluiași Șef de Formație, apar listați împreună.</div>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Secție</label>
@@ -895,6 +913,7 @@ create table if not exists public.angajati (
   initiala text,
   nume text not null,
   functie text,
+  grup text,
   schimb_id uuid,
   zile_co integer default 21,
   data_angajare date,
@@ -1933,6 +1952,13 @@ function renderOrgNode(node,depth=0){
     ?`<button class="org-node-toggle" onclick="event.stopPropagation();toggleOrgNode('${node.id}')" title="Extinde/Restrânge">▾</button>`
     :`<span style="width:20px;flex-shrink:0"></span>`;
 
+  // Dacă TOȚI copiii direcți sunt de tip angajat, afișăm grupat pe carduri (după câmpul "grup"),
+  // în loc de arbore vertical clasic — la fel ca în organigrama de referință (operatori grupați pe echipe)
+  const allChildrenAreAngajati=hasChildren&&children.every(ch=>ch.tip==='angajat');
+  const childrenHtml=allChildrenAreAngajati
+    ?renderAngajatiCarduri(children)
+    :children.map(ch=>renderOrgNode(ch,depth+1)).join('');
+
   return `<div class="org-node">
     <div class="org-node-row${isSelected?' selected':''}" onclick="selectOrgNode('${node.id}')">
       ${toggleBtn}
@@ -1945,8 +1971,39 @@ function renderOrgNode(node,depth=0){
       <button class="btn btn-ghost btn-sm" style="padding:3px 7px;margin-left:4px" onclick="event.stopPropagation();openOrgModal('${node.id}')" title="Editează">✏️</button>
     </div>
     <div class="org-node-children" id="org-children-${node.id}">
-      ${children.map(ch=>renderOrgNode(ch,depth+1)).join('')}
+      ${childrenHtml}
     </div>
+  </div>`;
+}
+
+// Afișează un set de noduri-angajat grupate pe carduri colorate uniform, după câmpul "grup".
+// Angajații fără grup setat apar într-un card separat "Neclasificați".
+function renderAngajatiCarduri(angajatNodes){
+  const groups={};
+  angajatNodes.forEach(node=>{
+    const ang=allAngajati.find(a=>a.org_node_id===node.id);
+    const grupName=ang?.grup?.trim()||'Neclasificați';
+    if(!groups[grupName]) groups[grupName]=[];
+    groups[grupName].push({node,ang});
+  });
+  const grupNames=Object.keys(groups).sort((a,b)=>a==='Neclasificați'?1:b==='Neclasificați'?-1:a.localeCompare(b));
+  return `<div class="org-card-grid">
+    ${grupNames.map(gName=>{
+      const items=groups[gName];
+      return `<div class="org-card-group">
+        <div class="org-card-group-title">${gName}</div>
+        ${items.map(({node,ang})=>{
+          const isSelected=node.id===selectedOrgNodeId;
+          const label=ang?`${ang.prenume} ${ang.initiala?ang.initiala+' ':''}${ang.nume}`:node.nume;
+          const sub=ang?.functie||'';
+          return `<div class="org-card-item${isSelected?' selected':''}" onclick="selectOrgNode('${node.id}')">
+            <div class="org-card-item-name">${label}</div>
+            ${sub?`<div class="org-card-item-sub">${sub}</div>`:''}
+            <button class="btn btn-ghost btn-sm org-card-item-edit" onclick="event.stopPropagation();openOrgModal('${node.id}')" title="Editează">✏️</button>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }).join('')}
   </div>`;
 }
 function toggleOrgNode(id){
@@ -2022,6 +2079,10 @@ function openOrgModal(id,parentId){
   secCondusaSel.innerHTML='<option value="">— selectează secția —</option>'+allSectii.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
   secCondusaSel.value=node?.sectie_id||'';
 
+  // Datalist cu grupurile existente, pentru autocomplete
+  const grupList=[...new Set(allAngajati.map(a=>a.grup).filter(Boolean))].sort();
+  document.getElementById('ang-grup-list').innerHTML=grupList.map(g=>`<option value="${g}"></option>`).join('');
+
   // Date persoană (Prenume/Nume/Funcție/Secție/Schimb/Cont) — la fel pentru orice tip de nod
   if(ang){
     document.getElementById('ang-prenume').value=ang.prenume||'';
@@ -2029,6 +2090,7 @@ function openOrgModal(id,parentId){
     document.getElementById('ang-nume-fam').value=ang.nume||'';
     document.getElementById('ang-nr-mat').value=ang.nr_matricol||'';
     document.getElementById('ang-functie').value=ang.functie||'';
+    document.getElementById('ang-grup').value=ang.grup||'';
     document.getElementById('ang-schimb').value=ang.schimb_id||'';
     document.getElementById('ang-sectie').value=ang.sectie_id||'';
     document.getElementById('ang-data-ang').value=ang.data_angajare||'';
@@ -2039,12 +2101,13 @@ function openOrgModal(id,parentId){
     document.getElementById('ang-prenume').value='';
     document.getElementById('ang-nr-mat').value='';
     document.getElementById('ang-functie').value='';
+    document.getElementById('ang-grup').value='';
     document.getElementById('ang-schimb').value='';
     document.getElementById('ang-sectie').value='';
     document.getElementById('ang-data-ang').value='';
     document.getElementById('ang-zile-co').value=21;
   } else {
-    ['ang-prenume','ang-nume-fam','ang-nr-mat','ang-functie'].forEach(x=>document.getElementById(x).value='');
+    ['ang-prenume','ang-nume-fam','ang-nr-mat','ang-functie','ang-grup'].forEach(x=>document.getElementById(x).value='');
     document.getElementById('ang-schimb').value='';
     document.getElementById('ang-sectie').value='';
     document.getElementById('ang-data-ang').value='';
@@ -2195,6 +2258,7 @@ async function saveOrgNode(){
   let angId=null;
   if(nodeId){
     const nr_matricol=document.getElementById('ang-nr-mat').value.trim()||null;
+    const grup=document.getElementById('ang-grup').value.trim()||null;
     const dataAngajare=document.getElementById('ang-data-ang').value||null;
     const zile_co=parseInt(document.getElementById('ang-zile-co').value)||21;
 
@@ -2208,10 +2272,10 @@ async function saveOrgNode(){
     // Căutăm direct în DB (nu din cache local) ca să evităm crearea de duplicate
     const {data:existingAngData}=await sb.from('angajati').select('id').eq('org_node_id',nodeId).maybeSingle();
     if(existingAngData){
-      await sb.from('angajati').update({prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare:dataAngajare,zile_co}).eq('id',existingAngData.id);
+      await sb.from('angajati').update({prenume,initiala,nume:numeFam,nr_matricol,functie,grup,schimb_id,sectie_id,data_angajare:dataAngajare,zile_co}).eq('id',existingAngData.id);
       angId=existingAngData.id;
     } else {
-      const {data}=await sb.from('angajati').insert({org_node_id:nodeId,prenume,initiala,nume:numeFam,nr_matricol,functie,schimb_id,sectie_id,data_angajare:dataAngajare,zile_co,activ:true}).select().single();
+      const {data}=await sb.from('angajati').insert({org_node_id:nodeId,prenume,initiala,nume:numeFam,nr_matricol,functie,grup,schimb_id,sectie_id,data_angajare:dataAngajare,zile_co,activ:true}).select().single();
       angId=data?.id;
     }
   }
