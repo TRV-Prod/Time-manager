@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pontaj Pro</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -421,7 +422,11 @@ tr:hover td{background:var(--slate-ll)}
           <div class="card" style="height:fit-content">
             <div class="card-title" style="justify-content:space-between">
               <span style="display:flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Organigramă</span>
-              <button class="btn btn-sm btn-primary" onclick="openOrgModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nod nou</button>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm dev-only" style="display:none" onclick="document.getElementById('org-import-file').click()" title="Import angajați din fișier Excel de pontaj"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import Excel</button>
+                <input type="file" id="org-import-file" accept=".xlsx,.xls" style="display:none" onchange="handleOrgImportFile(event)"/>
+                <button class="btn btn-sm btn-primary" onclick="openOrgModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nod nou</button>
+              </div>
             </div>
             <div id="org-tree" class="org-tree"><div class="loading-center"><div class="spinner"></div></div></div>
           </div>
@@ -1246,10 +1251,12 @@ function hasPerm(k){if(isAdmin()) return true;return currentProfile?.permissions
 
 function buildSidebarNav(){
   const isAd=isAdmin();
+  const isDv=isDev();
   document.getElementById('nav-section-admin').style.display=isAd?'block':'none';
   document.getElementById('nav-angajati').style.display=isAd?'flex':'none';
   document.getElementById('nav-utilizatori').style.display=isAd?'flex':'none';
   document.querySelectorAll('.admin-only').forEach(el=>el.style.display=isAd?'':'none');
+  document.querySelectorAll('.dev-only').forEach(el=>el.style.display=isDv?'':'none');
 }
 const PAGE_TITLES={dashboard:'Tablou de bord',pontaj:'Pontaj',invoiri:'Cereri invoiri',angajati:'Angajați',calendar:'Calendar',utilizatori:'Utilizatori'};
 const PAGE_SUBS={dashboard:'Bun venit!',pontaj:'Vizualizare și editare pontaj',invoiri:'Cereri de invoire',angajati:'Structură organizatorică',calendar:'Schimburi și sărbători legale',utilizatori:'Conturi și drepturi de acces'};
@@ -2015,6 +2022,99 @@ function selectOrgNode(id){
   renderOrgTree();
   renderAngajatDetail(id);
 }
+
+// ═══════════════════════════════════════════════
+// IMPORT ANGAJAȚI DIN EXCEL DE PONTAJ (doar developer)
+// ═══════════════════════════════════════════════
+const GRUP_NECONFIGURATI='Neconfigurați încă';
+
+function normalizeNumeForMatch(s){
+  return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z\s]/g,'').replace(/\s+/g,' ').trim();
+}
+
+// Parsează un nume din Excel de forma "NUME INIȚIALĂ Prenume" sau "NUME Prenume" (fără inițială).
+// Eurystica: ultimul cuvânt = prenume; daca al doilea-ultimul cuvânt are 1 literă (+ eventual punct) = inițială;
+// restul cuvintelor (1 sau mai multe) = nume de familie.
+function parseNumeExcel(raw){
+  const cuvinte=raw.trim().split(/\s+/).filter(Boolean);
+  if(cuvinte.length<2) return null;
+  let initiala='',numeFam,prenume;
+  const penultim=cuvinte[cuvinte.length-2].replace(/\.$/,'');
+  if(cuvinte.length>=3&&penultim.length<=2&&penultim===penultim.toUpperCase()){
+    // Format "NUME INIȚIALĂ Prenume" - inițiala separă numele de prenume
+    initiala=penultim;
+    numeFam=cuvinte.slice(0,cuvinte.length-2).join(' ');
+    prenume=cuvinte[cuvinte.length-1];
+  } else {
+    // Fără inițială: primul cuvânt = Nume, tot restul = Prenume (poate fi compus, ex. "Maricica Cristina")
+    numeFam=cuvinte[0];
+    prenume=cuvinte.slice(1).join(' ');
+  }
+  // Capitalizare Title Case pentru afișare (fișierele sursă sunt de obicei ALL CAPS)
+  const cap=s=>s.split(/(-|\s)/).map(p=>p.length>1&&p!=='-'?p[0].toUpperCase()+p.slice(1).toLowerCase():p).join('');
+  return {prenume:cap(prenume),initiala:initiala.toUpperCase(),nume:cap(numeFam)};
+}
+
+async function handleOrgImportFile(ev){
+  const file=ev.target.files[0];
+  if(!file) return;
+  ev.target.value=''; // reset input ca să poți reîncărca același fișier dacă e nevoie
+  if(typeof XLSX==='undefined'){toast('Librăria de citire Excel nu s-a încărcat. Reîncarcă pagina.','error');return;}
+
+  toast('Se citește fișierul...','info');
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array'});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+
+  // Coloana B (index 1) = "Numele și prenumele". Primele 2 rânduri sunt header (titluri + numere de zile).
+  const numeRaw=[];
+  for(let i=2;i<rows.length;i++){
+    const cell=rows[i]?.[1];
+    if(cell&&typeof cell==='string'&&cell.trim().length>1) numeRaw.push(cell.trim());
+  }
+  if(!numeRaw.length){toast('Nu am găsit nume valide în coloana B a fișierului.','error');return;}
+
+  // Set de nume normalizate deja existente în organigramă, pentru a evita duplicarea
+  const existente=new Set(allAngajati.map(a=>normalizeNumeForMatch(`${a.nume} ${a.prenume}`)));
+
+  const deImportat=[];
+  for(const raw of numeRaw){
+    const parsed=parseNumeExcel(raw);
+    if(!parsed) continue;
+    const key=normalizeNumeForMatch(`${parsed.nume} ${parsed.prenume}`);
+    if(existente.has(key)) continue; // deja există în organigramă - nu suprascriem, nu duplicăm
+    deImportat.push(parsed);
+  }
+
+  if(!deImportat.length){
+    toast('Toți angajații din fișier există deja în organigramă. Niciun import necesar.','success');
+    return;
+  }
+
+  // Găsește sau creează nodul-părinte "Neconfigurați încă" (la rădăcină, tip șef de formație,
+  // ca să poată ține copii de tip angajat)
+  let parentNode=allOrgNodes.find(n=>n.tip==='sef_formatie'&&n.nume===GRUP_NECONFIGURATI&&!n.parent_id);
+  if(!parentNode){
+    const {data,error}=await sb.from('org_nodes').insert({tip:'sef_formatie',nume:GRUP_NECONFIGURATI,parent_id:null}).select().single();
+    if(error){toast('Eroare la creare grup: '+error.message,'error');return;}
+    parentNode=data;
+    allOrgNodes.push(parentNode);
+  }
+
+  let okCount=0,errCount=0;
+  for(const p of deImportat){
+    const {data:node,error:nodeErr}=await sb.from('org_nodes').insert({tip:'angajat',nume:`${p.prenume} ${p.initiala?p.initiala+' ':''}${p.nume}`.trim(),parent_id:parentNode.id}).select().single();
+    if(nodeErr||!node){errCount++;continue;}
+    const {error:angErr}=await sb.from('angajati').insert({org_node_id:node.id,prenume:p.prenume,initiala:p.initiala||null,nume:p.nume,grup:GRUP_NECONFIGURATI,activ:true});
+    if(angErr) errCount++; else okCount++;
+  }
+
+  toast(`Import finalizat: ${okCount} angajați noi adăugați în "${GRUP_NECONFIGURATI}"`+(errCount?`, ${errCount} erori`:''),errCount?'warn':'success');
+  await Promise.all([loadOrgNodes(),loadAngajati()]);
+  renderOrgTree();
+}
+
 function renderAngajatDetail(nodeId){
   const node=allOrgNodes.find(n=>n.id===nodeId);if(!node)return;
   const ang=allAngajati.find(a=>a.org_node_id===nodeId);
