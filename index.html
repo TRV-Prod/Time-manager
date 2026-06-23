@@ -1036,6 +1036,7 @@ create policy "admin_select" on public.cereri for select using (exists(select 1 
 create policy "own_select" on public.cereri for select using (angajat_id=(select angajat_id from public.profiles where id=auth.uid()));
 create policy "insert_own" on public.cereri for insert with check (angajat_id=(select angajat_id from public.profiles where id=auth.uid()) or exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
 create policy "admin_update" on public.cereri for update using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
+create policy "admin_delete" on public.cereri for delete using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
 
 -- Trigger profil nou utilizator
 create or replace function public.handle_new_user()
@@ -1350,8 +1351,15 @@ async function renderDashboard(){
   const recent=allCereri.slice(0,5);
   document.getElementById('dash-cereri').innerHTML=recent.length?recent.map(i=>{
     const ang=allAngajati.find(a=>a.id===i.angajat_id);
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);gap:8px"><div><div style="font-size:13px;font-weight:500">${ang?angNume(ang):'—'}<span class="badge ${i.tip==='CO'?'badge-navy':'badge-purple'}" style="margin-left:6px;font-size:9px">${i.tip}</span></div><div style="font-size:11px;color:var(--text3)">${fmtDate(i.data_start)}${i.data_start!==i.data_sfarsit?' – '+fmtDate(i.data_sfarsit):''}${i.ora_start?' · '+i.ora_start.slice(0,5)+' – '+(i.ora_sfarsit||'').slice(0,5):''}</div></div><span class="badge ${statusBadge(i.status)}">${statusLabel(i.status)}</span></div>`;
+    const canDelete=i.status==='aprobat'||i.status==='refuzat';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);gap:8px"><div><div style="font-size:13px;font-weight:500">${ang?angNume(ang):'—'}<span class="badge ${i.tip==='CO'?'badge-navy':'badge-purple'}" style="margin-left:6px;font-size:9px">${i.tip}</span></div><div style="font-size:11px;color:var(--text3)">${fmtDate(i.data_start)}${i.data_start!==i.data_sfarsit?' – '+fmtDate(i.data_sfarsit):''}${i.ora_start?' · '+i.ora_start.slice(0,5)+' – '+(i.ora_sfarsit||'').slice(0,5):''}</div></div><div style="display:flex;align-items:center;gap:6px"><span class="badge ${statusBadge(i.status)}">${statusLabel(i.status)}</span>${canDelete?`<button onclick="deleteCerereDashboard('${i.id}')" title="Șterge cererea" style="border:none;background:none;cursor:pointer;color:var(--text3);font-size:16px;line-height:1;padding:2px">×</button>`:''}</div></div>`;
   }).join(''):'<div style="color:var(--text3);font-size:13px;padding:.5rem 0">Nicio cerere recentă.</div>';
+}
+async function deleteCerereDashboard(id){
+  if(!confirm('Ștergi această cerere din istoric?')) return;
+  await sb.from('cereri').delete().eq('id',id);
+  toast('Cerere ștearsă','success');
+  await loadInvoiri();renderDashboard();
 }
 function statCard(label,val,color,bg,icon){
   return `<div class="stat"><div class="stat-icon" style="background:${bg};color:${color}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${icon}"/></svg></div><div class="stat-body"><div class="stat-label">${label}</div><div class="stat-value" style="color:${color}">${val}</div></div></div>`;
