@@ -1017,7 +1017,9 @@ alter table public.cereri enable row level security;
 
 -- Policies generale
 create policy "select_all" on public.org_nodes for select using (true);
-create policy "admin_all" on public.org_nodes for all using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
+create policy "admin_insert" on public.org_nodes for insert with check (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
+create policy "admin_update" on public.org_nodes for update using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
+create policy "admin_delete" on public.org_nodes for delete using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
 create policy "select_all" on public.angajati for select using (true);
 create policy "admin_all" on public.angajati for all using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
 create policy "select_all" on public.profiles for select using (true);
@@ -2429,7 +2431,9 @@ async function saveOrgNode(){
 async function deleteOrgNode(){
   if(!editingOrgId) return;
   if(!confirm('Ștergi acest nod și toți sub-nodurile sale? Acțiunea este ireversibilă.')) return;
-  await sb.from('org_nodes').delete().eq('id',editingOrgId);
+  const {error,count}=await sb.from('org_nodes').delete({count:'exact'}).eq('id',editingOrgId);
+  if(error){toast('Eroare la ștergere: '+error.message,'error');return;}
+  if(!count){toast('Ștergerea nu a avut efect — posibil restricție de acces (RLS). Contactează un developer.','error');return;}
   toast('Nod șters','success');closeModal('modal-org');
   await Promise.all([loadOrgNodes(),loadAngajati()]);renderOrgTree();
   document.getElementById('angajat-detail-panel').innerHTML='<div class="card"><div style="text-align:center;padding:2rem;color:var(--text3)">Selectează un nod</div></div>';
