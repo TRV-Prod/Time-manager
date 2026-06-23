@@ -1959,12 +1959,14 @@ function renderOrgNode(node,depth=0){
     ?`<button class="org-node-toggle" onclick="event.stopPropagation();toggleOrgNode('${node.id}')" title="Extinde/Restrânge">▾</button>`
     :`<span style="width:20px;flex-shrink:0"></span>`;
 
-  // Dacă TOȚI copiii direcți sunt de tip angajat, afișăm grupat pe carduri (după câmpul "grup"),
-  // în loc de arbore vertical clasic — la fel ca în organigrama de referință (operatori grupați pe echipe)
-  const allChildrenAreAngajati=hasChildren&&children.every(ch=>ch.tip==='angajat');
-  const childrenHtml=allChildrenAreAngajati
-    ?renderAngajatiCarduri(children)
-    :children.map(ch=>renderOrgNode(ch,depth+1)).join('');
+  // Separăm copiii direcți în două categorii: angajații (afișați grupați pe carduri, după
+  // câmpul "grup") și restul nodurilor de conducere (afișate ca arbore clasic, recursiv).
+  // Funcționează indiferent dacă nodul are doar angajați, doar sub-noduri, sau un mix din ambele.
+  const copiiAngajati=children.filter(ch=>ch.tip==='angajat');
+  const copiiAlteTipuri=children.filter(ch=>ch.tip!=='angajat');
+  const childrenHtml=
+    (copiiAngajati.length?renderAngajatiCarduri(copiiAngajati):'')+
+    copiiAlteTipuri.map(ch=>renderOrgNode(ch,depth+1)).join('');
 
   return `<div class="org-node">
     <div class="org-node-row${isSelected?' selected':''}" onclick="selectOrgNode('${node.id}')">
