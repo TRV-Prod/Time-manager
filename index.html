@@ -1948,7 +1948,7 @@ function renderOrgNode(node,depth=0){
   let label='';
   if(ang){
     const ini=ang.initiala?ang.initiala+' ':'';
-    label=`${ang.prenume} ${ini}${ang.nume}`;
+    label=`${ang.nume} ${ini}${ang.prenume}`;
   } else {
     label=node.nume;
   }
@@ -2013,7 +2013,7 @@ function renderAngajatiCarduri(angajatNodes){
         <div class="org-card-group-title">${gName}</div>
         ${items.map(({node,ang})=>{
           const isSelected=node.id===selectedOrgNodeId;
-          const label=ang?`${ang.prenume} ${ang.initiala?ang.initiala+' ':''}${ang.nume}`:node.nume;
+          const label=ang?`${ang.nume} ${ang.initiala?ang.initiala+' ':''}${ang.prenume}`:node.nume;
           const sub=ang?.functie||'';
           return `<div class="org-card-item${isSelected?' selected':''}" onclick="selectOrgNode('${node.id}')">
             <div class="org-card-item-name">${label}</div>
@@ -2116,7 +2116,7 @@ async function handleOrgImportFile(ev){
 
   let okCount=0,errCount=0;
   for(const p of deImportat){
-    const {data:node,error:nodeErr}=await sb.from('org_nodes').insert({tip:'angajat',nume:`${p.prenume} ${p.initiala?p.initiala+' ':''}${p.nume}`.trim(),parent_id:parentNode.id}).select().single();
+    const {data:node,error:nodeErr}=await sb.from('org_nodes').insert({tip:'angajat',nume:`${p.nume} ${p.initiala?p.initiala+' ':''}${p.prenume}`.trim(),parent_id:parentNode.id}).select().single();
     if(nodeErr||!node){errCount++;continue;}
     const {error:angErr}=await sb.from('angajati').insert({org_node_id:node.id,prenume:p.prenume,initiala:p.initiala||null,nume:p.nume,grup:GRUP_NECONFIGURATI,activ:true});
     if(angErr) errCount++; else okCount++;
@@ -2137,7 +2137,7 @@ function renderAngajatDetail(nodeId){
   panel.innerHTML=`<div class="card">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:1.25rem">
       <div style="width:52px;height:52px;border-radius:50%;background:var(--orange-l);color:var(--orange-d);font-weight:700;font-size:18px;display:flex;align-items:center;justify-content:center">${ORG_TIP_ICONS[node.tip]||'📁'}</div>
-      <div><div style="font-size:16px;font-weight:700">${ang?(ang.prenume+(ang.initiala?' '+ang.initiala:'')+' '+ang.nume):node.nume}</div><div class="org-node-type" style="margin-top:2px">${ORG_TIP_LABELS[node.tip]}</div></div>
+      <div><div style="font-size:16px;font-weight:700">${ang?(ang.nume+(ang.initiala?' '+ang.initiala:'')+' '+ang.prenume):node.nume}</div><div class="org-node-type" style="margin-top:2px">${ORG_TIP_LABELS[node.tip]}</div></div>
     </div>
     ${ang?`<div class="grid-2" style="margin-bottom:1rem">
       <div><div class="form-label">Nr. matricol</div><div>${ang.nr_matricol||'—'}</div></div>
@@ -2340,7 +2340,7 @@ async function saveOrgNode(){
   }
 
   const ini=initiala?initiala+' ':'';
-  const nume=`${prenume} ${ini}${numeFam}`.trim();
+  const nume=`${numeFam} ${ini}${prenume}`.trim();
 
   let nodeId=editingOrgId;
   let oldSectieId=null;
@@ -2691,7 +2691,7 @@ function showOrgError(html){
   box.innerHTML=`<div class="alert alert-danger">⚠️ ${html}</div>`;
   box.style.display='block';
 }
-function angNume(ang){if(!ang)return'—';const ini=ang.initiala?ang.initiala+' ':'';return `${ang.prenume||''} ${ini}${ang.nume||''}`.trim();}
+function angNume(ang){if(!ang)return'—';const ini=ang.initiala?ang.initiala+' ':'';return `${ang.nume||''} ${ini}${ang.prenume||''}`.trim();}
 function fmtDate(d){if(!d)return'—';try{return new Date(d+'T00:00:00').toLocaleDateString('ro-RO');}catch{return d;}}
 function fmtDateTime(d){if(!d)return'—';try{return new Date(d).toLocaleString('ro-RO',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch{return d;}}
 function fmtDateISO(d){return d.toISOString().split('T')[0];}
