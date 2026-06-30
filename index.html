@@ -6,6 +6,7 @@
 <title>Pontaj Pro</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -555,6 +556,21 @@ tr:hover td{background:var(--slate-ll)}
 
         <div id="prod-rezumat" style="margin-bottom:1rem"></div>
         <div id="prod-summary" class="grid-5" style="margin-bottom:1rem"></div>
+
+        <div class="card" style="margin-bottom:1rem">
+          <div class="card-title" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <span>Vizualizare eficiență</span>
+            <select id="prod-chart-tip" class="form-control" style="width:220px" onchange="renderProductieChart()">
+              <option value="bara">Bară comparativă (recomandat)</option>
+              <option value="pie">Plăcintă (Pontat vs Normat vs Raportat)</option>
+              <option value="linie">Linie — evoluție zilnică</option>
+            </select>
+          </div>
+          <div id="prod-chart-wrap" style="position:relative;height:280px;margin-top:.5rem">
+            <canvas id="prod-chart-canvas"></canvas>
+          </div>
+          <div id="prod-chart-empty" style="display:none;text-align:center;color:var(--text3);padding:2rem;font-size:13px">Nu există date suficiente pentru grafic în perioada selectată.</div>
+        </div>
 
         <div class="card">
           <div class="card-title">Detaliu pe operații</div>
@@ -2458,16 +2474,23 @@ async function handleProductieImportFile(ev){
 
   // Upsert pe event_id în loturi de 500, pentru a evita duplicarea la reîncărcări repetate
   // ale aceluiași fișier sau ale unor intervale de date care se suprapun.
-  let okCount=0,errCount=0;
+  let okCount=0,errCount=0,lastError=null;
   const batchSize=500;
   for(let i=0;i<records.length;i+=batchSize){
     const batch=records.slice(i,i+batchSize);
     statusEl.innerHTML=`<div class="alert alert-info">Se salvează... ${Math.min(i+batchSize,records.length)}/${records.length}</div>`;
     const {error}=await sb.from('productie_evenimente').upsert(batch,{onConflict:'event_id'});
-    if(error) errCount+=batch.length; else okCount+=batch.length;
+    if(error){errCount+=batch.length;lastError=error;console.error('Eroare upsert productie_evenimente:',error);}
+    else okCount+=batch.length;
   }
 
-  const fmtErr=errCount?` (${errCount} rânduri cu eroare)`:'';
+  if(errCount&&!okCount){
+    statusEl.innerHTML=`<div class="alert alert-danger">Importul a eșuat complet (0 din ${records.length} salvate).<br>
+      <span style="font-size:11px">Eroare: ${lastError?.message||'necunoscută'} ${lastError?.code?'(cod: '+lastError.code+')':''}</span></div>`;
+    toast('Import eșuat — vezi detalii pe pagină','error');
+    return;
+  }
+  const fmtErr=errCount?` (${errCount} rânduri cu eroare: ${lastError?.message||''})`:'';
   statusEl.innerHTML=`<div class="alert alert-success">Import finalizat: ${okCount} înregistrări salvate/actualizate${fmtErr}.</div>`;
   toast('Import producție finalizat','success');
   if(document.getElementById('page-productie').classList.contains('active')) renderProductieRaport();
@@ -2572,8 +2595,10 @@ async function renderProductieRaport(){
   if(error){toast('Eroare la încărcarea raportului: '+error.message,'error');return;}
   allProductieEv=data||[];
 
-  // Timp pontat (din tabela pontaj) pentru aceeași perioadă/angajat(i), folosit în rezumat și statistici
+  // Timp pontat (din tabela pontaj) pentru aceeași perioadă/angajat(i), folosit în rezumat,
+  // statistici și grafic. Agregăm și total, și pe zile (pentru graficul de evoluție).
   let pontMap={}; // angajat_id -> total ore pontate (h) în perioadă
+  let pontMapPerZi={}; // data -> total minute pontate (toți angajații din filtrul curent)
   let pontQ=sb.from('pontaj').select('angajat_id,ore_lucrate,ora_intrare,ora_iesire,data').gte('data',dataStart).lte('data',dataEnd).eq('tip','P');
   if(!isAdmin()&&currentProfile?.angajat_id) pontQ=pontQ.eq('angajat_id',currentProfile.angajat_id);
   else if(isAdmin()){
@@ -2588,21 +2613,31 @@ async function renderProductieRaport(){
       ore=Math.max(0,d);
     }
     pontMap[p.angajat_id]=(pontMap[p.angajat_id]||0)+(ore||0);
+    pontMapPerZi[p.data]=(pontMapPerZi[p.data]||0)+(ore||0)*60;
   });
   const totalOrePontate=Object.values(pontMap).reduce((s,v)=>s+v,0);
 
-  renderProductieTable(allProductieEv,angajatFiltrat,totalOrePontate,dataStart,dataEnd);
+  renderProductieTable(allProductieEv,angajatFiltrat,totalOrePontate,dataStart,dataEnd,pontMapPerZi);
 }
 
-function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataStart,dataEnd){
+let prodChartInstance=null;
+let prodChartData={totalNormat:0,totalRaportat:0,totalPontat:0,perZi:{}};
+
+function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataStart,dataEnd,pontMapPerZi){
   const isAd=isAdmin();
   let totalNormat=0,totalRaportat=0,totalQty=0;
+  const perZi={}; // data -> {normat,raportat,pontat}
   const tbody=document.getElementById('prod-tbody');
   tbody.innerHTML=rows.length?rows.map(r=>{
-    const timpNormat=(r.manufact_qty||0)*(r.run_tm||0)+(r.setup_tm||0); // minute
+    const timpNormat=(r.manufact_qty||0)>0?((r.manufact_qty||0)*(r.run_tm||0)+(r.setup_tm||0)):0; // minute
     const timpRaportat=r.used_tm_movex_min||0; // minute
     const eficienta=timpRaportat>0?(timpNormat/timpRaportat*100):null;
     totalNormat+=timpNormat;totalRaportat+=timpRaportat;totalQty+=(r.manufact_qty||0);
+    const zi=r.transaction_dt;
+    if(zi){
+      if(!perZi[zi]) perZi[zi]={normat:0,raportat:0,pontat:0};
+      perZi[zi].normat+=timpNormat;perZi[zi].raportat+=timpRaportat;
+    }
     const ang=allAngajati.find(a=>a.id===r.angajat_id);
     const effColor=eficienta==null?'var(--text3)':eficienta>=90?'var(--green)':eficienta>=70?'var(--amber)':'var(--red)';
     return `<tr>
@@ -2616,6 +2651,12 @@ function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataStart,dat
       <td style="font-weight:700;color:${effColor}">${eficienta!=null?eficienta.toFixed(0)+'%':'—'}</td>
     </tr>`;
   }).join(''):`<tr><td colspan="${isAd?8:7}" style="text-align:center;color:var(--text3);padding:1.5rem">Nicio înregistrare găsită pentru perioada selectată.</td></tr>`;
+
+  // Distribuim timpul pontat (din tabela pontaj, pe zile) în aceeași structură perZi
+  Object.entries(pontMapPerZi||{}).forEach(([zi,minute])=>{
+    if(!perZi[zi]) perZi[zi]={normat:0,raportat:0,pontat:0};
+    perZi[zi].pontat=minute;
+  });
 
   document.querySelectorAll('#page-productie thead .admin-only').forEach(el=>el.style.display=isAd?'':'none');
 
@@ -2645,11 +2686,100 @@ function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataStart,dat
   } else {
     rezumatEl.innerHTML='';rezumatEl.style.display='none';
   }
+
+  prodChartData={totalNormat,totalRaportat,totalPontat:totalPontatMin,perZi};
+  renderProductieChart();
 }
 function fmtMinutes(min){
   if(!min) return '0m';
   const h=Math.floor(min/60),m=Math.round(min%60);
   return h>0?`${h}h ${m}m`:`${m}m`;
+}
+
+function renderProductieChart(){
+  if(typeof Chart==='undefined') return;
+  const tip=document.getElementById('prod-chart-tip')?.value||'bara';
+  const {totalNormat,totalRaportat,totalPontat,perZi}=prodChartData;
+  const canvas=document.getElementById('prod-chart-canvas');
+  const emptyEl=document.getElementById('prod-chart-empty');
+  if(prodChartInstance){prodChartInstance.destroy();prodChartInstance=null;}
+
+  const hasData=totalPontat>0||totalNormat>0||totalRaportat>0;
+  canvas.style.display=hasData?'block':'none';
+  emptyEl.style.display=hasData?'none':'block';
+  if(!hasData) return;
+
+  const ctx=canvas.getContext('2d');
+  const culNormat='#1a7a4a',culRaportat='#e8610a',culPontat='#5b4fcf';
+
+  if(tip==='bara'){
+    // Bară orizontală stivuită: Timp Pontat = bara de referință (100%), cu Timp Normat și
+    // Timp Raportat afișate dedesubt ca bare proprii, ușor de comparat vizual ca lungime.
+    // Acest model arată clar "cât de mult din ziua de lucru a fost folosit eficient".
+    prodChartInstance=new Chart(ctx,{
+      type:'bar',
+      data:{
+        labels:['Timp pontat','Timp raportat','Timp normat'],
+        datasets:[{
+          data:[totalPontat,totalRaportat,totalNormat],
+          backgroundColor:[culPontat,culRaportat,culNormat],
+          borderRadius:6,
+          barThickness:38
+        }]
+      },
+      options:{
+        indexAxis:'y',
+        responsive:true,maintainAspectRatio:false,
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{label:c=>fmtMinutes(c.raw)}}
+        },
+        scales:{
+          x:{ticks:{callback:v=>fmtMinutes(v)},grid:{color:'#eef1f8'}},
+          y:{grid:{display:false}}
+        }
+      }
+    });
+  } else if(tip==='pie'){
+    // Plăcintă: cele 3 valori ca proporții unele față de altele (nu parte-din-întreg strict,
+    // dar util pentru a vedea rapid ponderea relativă a fiecărui tip de timp)
+    prodChartInstance=new Chart(ctx,{
+      type:'doughnut',
+      data:{
+        labels:['Timp pontat','Timp raportat','Timp normat'],
+        datasets:[{
+          data:[totalPontat,totalRaportat,totalNormat],
+          backgroundColor:[culPontat,culRaportat,culNormat],
+          borderWidth:2,borderColor:'#fff'
+        }]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{
+          legend:{position:'bottom'},
+          tooltip:{callbacks:{label:c=>c.label+': '+fmtMinutes(c.raw)}}
+        }
+      }
+    });
+  } else if(tip==='linie'){
+    const zile=Object.keys(perZi).sort();
+    prodChartInstance=new Chart(ctx,{
+      type:'line',
+      data:{
+        labels:zile.map(z=>fmtDate(z)),
+        datasets:[
+          {label:'Timp pontat',data:zile.map(z=>perZi[z].pontat||0),borderColor:culPontat,backgroundColor:culPontat+'22',tension:.3,fill:true},
+          {label:'Timp raportat',data:zile.map(z=>perZi[z].raportat||0),borderColor:culRaportat,backgroundColor:culRaportat+'22',tension:.3,fill:true},
+          {label:'Timp normat',data:zile.map(z=>perZi[z].normat||0),borderColor:culNormat,backgroundColor:culNormat+'22',tension:.3,fill:true}
+        ]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtMinutes(c.raw)}}},
+        scales:{y:{ticks:{callback:v=>fmtMinutes(v)},grid:{color:'#eef1f8'}},x:{grid:{display:false}}}
+      }
+    });
+  }
 }
 
 function renderAngajatDetail(nodeId){
