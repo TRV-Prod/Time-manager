@@ -1277,7 +1277,20 @@ function saveSetup(){
 function showSetup(){hide('app');hide('login-page');show('setup-screen');}
 function show(id){document.getElementById(id).style.display='flex';}
 function hide(id){document.getElementById(id).style.display='none';}
-function showApp(){hide('setup-screen');hide('login-page');document.getElementById('app').style.display='block';loadAll().then(()=>{buildSidebarNav();showPage('dashboard');});}
+function showApp(){
+  hide('setup-screen');hide('login-page');document.getElementById('app').style.display='block';
+  loadAll().then(()=>{
+    buildSidebarNav();
+    const adminOnlyPages=['angajati','utilizatori'];
+    let lastPage=sessionStorage.getItem('pontaj_last_page')||'dashboard';
+    // Dacă pagina salvată e doar pentru admin/developer și userul curent nu mai are acel rol,
+    // sau dacă pagina nu mai există în interfață, revenim la dashboard ca fallback sigur.
+    if((adminOnlyPages.includes(lastPage)&&!isAdmin())||!document.getElementById('page-'+lastPage)){
+      lastPage='dashboard';
+    }
+    showPage(lastPage);
+  });
+}
 function showLogin(){hide('setup-screen');hide('app');document.getElementById('login-page').style.display='flex';}
 
 function initSupabase(url,key){
@@ -1365,6 +1378,7 @@ function buildSidebarNav(){
 const PAGE_TITLES={dashboard:'Tablou de bord',pontaj:'Pontaj',invoiri:'Cereri invoiri',angajati:'Angajați',calendar:'Calendar',utilizatori:'Utilizatori',productie:'Producție'};
 const PAGE_SUBS={dashboard:'Bun venit!',pontaj:'Vizualizare și editare pontaj',invoiri:'Cereri de invoire',angajati:'Structură organizatorică',calendar:'Schimburi și sărbători legale',utilizatori:'Conturi și drepturi de acces',productie:'Raport eficiență producție'};
 function showPage(id){
+  sessionStorage.setItem('pontaj_last_page',id);
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const p=document.getElementById('page-'+id);if(p)p.classList.add('active');
