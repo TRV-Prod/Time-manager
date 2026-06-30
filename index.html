@@ -2341,22 +2341,38 @@ async function handleProductieImportFile(ev){
   const file=ev.target.files[0];
   if(!file) return;
   ev.target.value='';
-  if(typeof XLSX==='undefined'){toast('Librăria de citire Excel nu s-a încărcat. Reîncarcă pagina.','error');return;}
 
   const statusEl=document.getElementById('prod-import-status');
   statusEl.style.display='block';
-  statusEl.innerHTML='<div class="alert alert-info">Se citește fișierul...</div>';
+  statusEl.innerHTML='<div class="alert alert-info">Se pregătește citirea fișierului...</div>';
 
+  // XLSX se încarcă din CDN; pe conexiuni lente s-ar putea ca scriptul să nu fie încă disponibil
+  // în momentul în care utilizatorul apasă butonul de import. Așteptăm până la 5 secunde.
+  let waited=0;
+  while(typeof XLSX==='undefined'&&waited<5000){
+    await new Promise(r=>setTimeout(r,250));
+    waited+=250;
+  }
+  if(typeof XLSX==='undefined'){
+    statusEl.innerHTML='<div class="alert alert-danger">Librăria de citire Excel nu s-a încărcat (verifică conexiunea la internet) — reîncarcă pagina și încearcă din nou.</div>';
+    return;
+  }
+
+  statusEl.innerHTML='<div class="alert alert-info">Se citește fișierul...</div>';
   const buf=await file.arrayBuffer();
   const wb=XLSX.read(buf,{type:'array',cellDates:true});
   const ws=wb.Sheets[wb.SheetNames[0]];
   const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
-  if(rows.length<2){statusEl.innerHTML='<div class="alert alert-danger">Fișierul nu conține date.</div>';return;}
+  if(rows.length<2){statusEl.innerHTML='<div class="alert alert-danger">Fișierul nu conține date (sub 2 rânduri).</div>';return;}
 
-  // Mapăm coloanele după denumirea din header (rândul 1), nu după index fix,
-  // ca să fim robuști la eventuale reordonări ale coloanelor în export-urile viitoare.
+  // Mapăm coloanele după denumirea din header (rândul 1), nu după index fix, ca să fim
+  // robuști la eventuale reordonări ale coloanelor în export-urile viitoare. Comparația
+  // ignoră majuscule/spații/underscore-uri, ca să tolereze mici variații de denumire
+  // (ex. "Employee No", "employee_no", "Employee  no").
+  const normCol=s=>String(s||'').trim().toLowerCase().replace(/[\s_]+/g,'');
   const header=rows[0].map(h=>String(h||'').trim());
-  const col=name=>header.indexOf(name);
+  const headerNorm=header.map(normCol);
+  const col=name=>headerNorm.indexOf(normCol(name));
   const idx={
     transDt:col('Transaction dt'), product:col('Product'), productDesc:col('Product desc'),
     mo:col('MO'), workcenter:col('Workcenter'), workcenterName:col('Workcenter name'),
@@ -2365,7 +2381,8 @@ async function handleProductieImportFile(ev){
     runTm:col('Run tm'), setupTm:col('Setup tm'), usedTmMovex:col('Used_tm_movex'), event:col('Event')
   };
   if(idx.event<0||idx.employeeNo<0){
-    statusEl.innerHTML='<div class="alert alert-danger">Nu am găsit coloanele esențiale (Event / Employee no) în fișier.</div>';
+    statusEl.innerHTML=`<div class="alert alert-danger">Nu am găsit coloanele esențiale (Event / Employee no) în fișier.<br>
+      <span style="font-size:11px;opacity:.8">Coloane găsite în fișier (rândul 1): ${header.map(h=>`"${h}"`).join(', ')}</span></div>`;
     return;
   }
 
