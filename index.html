@@ -133,8 +133,10 @@ tr:hover td{background:var(--slate-ll)}
 .divider{border:none;border-top:1px solid var(--border);margin:1.25rem 0}
 
 /* ── ORGANIGRAMĂ ── */
-.org-tree{padding:.5rem}
-.org-tree-wrap{font-size:13px}
+.org-tree{padding:.5rem;overflow:auto;max-height:72vh;border:1px solid var(--border);border-radius:var(--r2);background:var(--bg)}
+.org-tree-wrap{font-size:13px;display:inline-block;transform-origin:top left}
+.org-tree-controls{display:flex;align-items:center;gap:6px}
+.org-tree-controls .zoom-label{font-size:12px;color:var(--text3);min-width:40px;text-align:center;font-weight:600}
 .org-node{position:relative}
 .org-node-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r2);cursor:pointer;transition:.12s;border:1.5px solid transparent;margin-bottom:2px}
 .org-node-row:hover{background:var(--slate-ll);border-color:var(--border)}
@@ -436,24 +438,29 @@ tr:hover td{background:var(--slate-ll)}
 
       <!-- ANGAJAȚI -->
       <div class="page" id="page-angajati">
-        <div class="grid-2">
-          <div class="card" style="height:fit-content">
-            <div class="card-title" style="justify-content:space-between">
-              <span style="display:flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Organigramă</span>
-              <div style="display:flex;gap:6px">
-                <button class="btn btn-sm dev-only" style="display:none" onclick="document.getElementById('org-import-file').click()" title="Import angajați din fișier Excel de pontaj"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import Excel</button>
-                <input type="file" id="org-import-file" accept=".xlsx,.xls" style="display:none" onchange="handleOrgImportFile(event)"/>
-                <button class="btn btn-sm btn-primary" onclick="openOrgModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nod nou</button>
+        <div class="card" style="margin-bottom:1rem">
+          <div class="card-title" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <span style="display:flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Organigramă</span>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <div class="org-tree-controls">
+                <button class="btn btn-sm" onclick="orgZoom(-0.1)" title="Micșorează">−</button>
+                <span class="zoom-label" id="org-zoom-label">100%</span>
+                <button class="btn btn-sm" onclick="orgZoom(0.1)" title="Mărește">+</button>
+                <button class="btn btn-sm" onclick="orgZoomReset()" title="Resetează zoom">Reset</button>
               </div>
+              <button class="btn btn-sm" onclick="exportOrgPDF()" title="Exportă organigrama vizibilă în PDF (A4 Portrait, Fit to Page)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Export PDF</button>
+              <button class="btn btn-sm dev-only" style="display:none" onclick="document.getElementById('org-import-file').click()" title="Import angajați din fișier Excel de pontaj"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import Excel</button>
+              <input type="file" id="org-import-file" accept=".xlsx,.xls" style="display:none" onchange="handleOrgImportFile(event)"/>
+              <button class="btn btn-sm btn-primary" onclick="openOrgModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nod nou</button>
             </div>
-            <div id="org-tree" class="org-tree"><div class="loading-center"><div class="spinner"></div></div></div>
           </div>
-          <div id="angajat-detail-panel">
-            <div class="card">
-              <div style="text-align:center;padding:2rem;color:var(--text3)">
-                <svg style="width:48px;height:48px;fill:none;stroke:currentColor;stroke-width:1.5;opacity:.4" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-                <div style="margin-top:.75rem;font-size:13px">Selectează un nod din organigramă</div>
-              </div>
+          <div id="org-tree" class="org-tree"><div class="loading-center"><div class="spinner"></div></div></div>
+        </div>
+        <div id="angajat-detail-panel">
+          <div class="card">
+            <div style="text-align:center;padding:2rem;color:var(--text3)">
+              <svg style="width:48px;height:48px;fill:none;stroke:currentColor;stroke-width:1.5;opacity:.4" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+              <div style="margin-top:.75rem;font-size:13px">Selectează un nod din organigramă</div>
             </div>
           </div>
         </div>
@@ -1918,6 +1925,8 @@ async function processInvoiere(id,status){
 const ORG_TIP_LABELS={director:'Director',manager_dep:'Manager Departament',manager:'Manager',sectie:'Secție',sef_formatie:'Șef Formație',workcenter:'Workcenter',angajat:'Angajat'};
 const ORG_TIP_ICONS={director:'👑',manager_dep:'🏢',manager:'👔',sectie:'🏭',sef_formatie:'⚙️',workcenter:'🔧',angajat:'👤'};
 
+let orgZoomLevel=1;
+
 function renderOrgTree(){
   const el=document.getElementById('org-tree');
   const roots=allOrgNodes.filter(n=>!n.parent_id);
@@ -1926,7 +1935,77 @@ function renderOrgTree(){
       '<div style="font-size:28px;margin-bottom:.5rem">🏭</div>Organigramă goală.<br>Apasă <b>Nod nou</b> pentru a începe.</div>';
     return;
   }
-  el.innerHTML='<div class="org-tree-wrap">'+roots.map(n=>renderOrgNode(n)).join('')+'</div>';
+  el.innerHTML='<div class="org-tree-wrap" id="org-tree-wrap" style="transform:scale('+orgZoomLevel+')">'+
+    roots.map(n=>renderOrgNode(n)).join('')+'</div>';
+}
+
+function orgZoom(delta){
+  orgZoomLevel=Math.max(0.4,Math.min(1.6,Math.round((orgZoomLevel+delta)*100)/100));
+  const wrap=document.getElementById('org-tree-wrap');
+  if(wrap) wrap.style.transform='scale('+orgZoomLevel+')';
+  const lbl=document.getElementById('org-zoom-label');
+  if(lbl) lbl.textContent=Math.round(orgZoomLevel*100)+'%';
+}
+function orgZoomReset(){
+  orgZoomLevel=1;
+  const wrap=document.getElementById('org-tree-wrap');
+  if(wrap) wrap.style.transform='scale(1)';
+  const lbl=document.getElementById('org-zoom-label');
+  if(lbl) lbl.textContent='100%';
+}
+
+// Exportă organigrama EXACT așa cum e vizibilă acum (nodurile restrânse rămân ascunse,
+// cele extinse apar) într-o fereastră de print, scalată automat să încapă pe o pagină
+// A4 Portrait ("Fit to page" — tot conținutul pe o singură pagină, indiferent de mărime).
+function exportOrgPDF(){
+  const wrap=document.getElementById('org-tree-wrap');
+  if(!wrap){toast('Organigrama nu este încărcată','error');return;}
+
+  const clone=wrap.cloneNode(true);
+  clone.style.transform='none';
+  // Eliminăm elementele interactive care nu au sens pe hârtie
+  clone.querySelectorAll('.org-node-toggle,.btn-ghost,.org-card-item-edit').forEach(b=>b.remove());
+
+  const printWin=window.open('','_blank');
+  printWin.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Organigramă</title>
+  <style>
+    @page{size:A4 portrait;margin:8mm}
+    *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+    .org-node-row{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;border:1.2px solid #d8dee8;background:#fff;white-space:nowrap;margin-bottom:2px}
+    .org-node-row.selected{background:#fdf0e8;border-color:#e8610a}
+    .org-node-icon{width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;background:#eef1f8}
+    .org-node-label{font-size:10px;font-weight:700;color:#1a2744}
+    .org-node-sub{font-size:8.5px;color:#6b7fa3;margin-top:1px}
+    .org-node-stats{display:flex;gap:3px}
+    .org-stat-pill{font-size:7.5px;font-weight:700;padding:1px 5px;border-radius:8px;background:#eef1f8;color:#1a2744}
+    .org-node-children{margin-left:14px;padding-left:12px;border-left:1.5px dashed #c5cce0}
+    .org-card-grid{display:flex;flex-wrap:wrap;align-items:flex-start;gap:7px;padding:7px 0 2px}
+    .org-card-group{flex:0 0 auto;width:140px;background:#eef1f8;border:1px solid #d8dee8;border-radius:6px;padding:5px;display:flex;flex-direction:column;gap:3px}
+    .org-card-group-title{font-size:8px;font-weight:700;color:#1a2744;text-transform:uppercase;padding:1px 2px 2px;border-bottom:1px solid #d8dee8;margin-bottom:1px}
+    .org-card-item{background:#fff;border:1px solid #d8dee8;border-radius:5px;padding:3px 5px}
+    .org-card-item-name{font-size:8.5px;font-weight:600;color:#1a2744;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .org-card-item-sub{font-size:7px;color:#6b7fa3}
+    #print-root{transform-origin:top left}
+  </style></head>
+  <body>
+    <h2 style="font-size:13px;margin-bottom:8px;color:#1a2744">Organigramă — ${new Date().toLocaleDateString('ro-RO')}</h2>
+    <div id="print-root">${clone.outerHTML}</div>
+    <script>
+      // Fit to page: scalează tot conținutul (lățime ȘI înălțime) să încapă pe o singură
+      // pagină A4 portrait, indiferent cât de mare e organigrama vizibilă curent.
+      window.onload=function(){
+        const root=document.getElementById('print-root');
+        const pxPerMm=96/25.4;
+        const maxWidthPx=(210-16)*pxPerMm;  // A4 portrait lățime utilă
+        const maxHeightPx=(297-26)*pxPerMm; // A4 portrait înălțime utilă (minus titlu)
+        const w=root.scrollWidth,h=root.scrollHeight;
+        const scale=Math.min(maxWidthPx/w,maxHeightPx/h,1);
+        root.style.transform='scale('+scale+')';
+        setTimeout(()=>window.print(),300);
+      };
+    <\/script>
+  </body></html>`);
+  printWin.document.close();
 }
 
 function countSubAngajati(nodeId){
@@ -1991,20 +2070,13 @@ function renderOrgNode(node,depth=0){
     :`<span style="width:20px;flex-shrink:0"></span>`;
 
   // Copiii de conducere (Manager/Șef Formație/etc) continuă arborele vertical clasic, recursiv.
+  // Copiii de tip angajat, indiferent la ce nivel se află, sunt afișați AICI, direct sub
+  // părintele lor real — grupați pe carduri (după câmpul "grup") — astfel încât niciun angajat
+  // subordonat direct unui nod nu rămâne ascuns, indiferent câți alți manageri mai are părintele.
   const copiiConducere=children.filter(ch=>ch.tip!=='angajat');
+  const copiiAngajatiDirecti=children.filter(ch=>ch.tip==='angajat');
   const subArbore=copiiConducere.map(ch=>renderOrgNode(ch,depth+1)).join('');
-
-  // Dacă NICIUNUL dintre copiii de conducere nu are, la rândul lui, alți copii de conducere
-  // sub el (adică ei sunt "frunze" — ex. Șefii de Formație, fără sub-manageri proprii), atunci
-  // AICI se termină lanțul de conducere al acestei ramuri. Colectăm și afișăm o singură dată,
-  // pe un rând comun, TOȚI angajații din întreg subarborele acestui nod (cei direcți + cei de
-  // sub Șefii de Formație + cei de sub orice alt sub-nivel), exact ca în organigrama de referință.
-  const esteFinalDeRamuraDeConducere=copiiConducere.length===0||
-    copiiConducere.every(ch=>allOrgNodes.filter(n=>n.parent_id===ch.id&&n.tip!=='angajat').length===0);
-
-  const cardurileHtml=(!isAngajat&&esteFinalDeRamuraDeConducere)
-    ?renderAngajatiCarduri(collectAngajatiSubarbore(node.id))
-    :'';
+  const cardurileHtml=copiiAngajatiDirecti.length?renderAngajatiCarduri(copiiAngajatiDirecti):'';
 
   return `<div class="org-node">
     <div class="org-node-row${isSelected?' selected':''}" onclick="selectOrgNode('${node.id}')">
@@ -2018,7 +2090,7 @@ function renderOrgNode(node,depth=0){
       <button class="btn btn-ghost btn-sm" style="padding:3px 7px;margin-left:4px" onclick="event.stopPropagation();openOrgModal('${node.id}')" title="Editează">✏️</button>
     </div>
     <div class="org-node-children" id="org-children-${node.id}">
-      ${subArbore}${cardurileHtml}
+      ${cardurileHtml}${subArbore}
     </div>
   </div>`;
 }
