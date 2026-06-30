@@ -133,32 +133,20 @@ tr:hover td{background:var(--slate-ll)}
 .divider{border:none;border-top:1px solid var(--border);margin:1.25rem 0}
 
 /* ── ORGANIGRAMĂ ── */
-.org-tree{padding:.5rem;overflow:auto;position:relative;max-height:75vh}
-.org-tree-wrap{font-size:13px;transform-origin:top left;transition:transform .15s}
-.org-tree-controls{display:flex;align-items:center;gap:6px;margin-bottom:.5rem}
-.org-tree-controls .zoom-label{font-size:12px;color:var(--text3);min-width:42px;text-align:center}
+.org-tree{padding:.5rem}
+.org-tree-wrap{font-size:13px}
 .org-node{position:relative}
-.org-row-root{display:flex;flex-direction:column;align-items:flex-start}
-.org-node-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r2);cursor:pointer;transition:.12s;border:1.5px solid var(--border);margin-bottom:2px;background:var(--card);position:relative;z-index:1;white-space:nowrap}
-.org-node-row:hover{background:var(--slate-ll);border-color:var(--orange)}
+.org-node-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r2);cursor:pointer;transition:.12s;border:1.5px solid transparent;margin-bottom:2px}
+.org-node-row:hover{background:var(--slate-ll);border-color:var(--border)}
 .org-node-row.selected{background:var(--orange-l);border-color:var(--orange)}
+.org-node-children{margin-left:16px;padding-left:14px;border-left:2px dashed var(--border-d)}
 .org-node-toggle{width:20px;height:20px;border:1px solid var(--border);background:var(--card);cursor:pointer;border-radius:4px;color:var(--text3);font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:.12s}
 .org-node-toggle:hover{background:var(--orange-l);border-color:var(--orange);color:var(--orange-d)}
 .org-node-icon{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px}
 .org-node-main{flex:1;min-width:0}
-.org-node-label{font-size:13px;font-weight:600;color:var(--navy);white-space:nowrap}
+.org-node-label{font-size:13px;font-weight:600;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .org-node-sub{font-size:11px;color:var(--text3);margin-top:1px}
 .org-node-stats{display:flex;gap:4px;align-items:center;flex-shrink:0}
-
-/* Layout orizontal tip flowchart: nodul propriu pe primul rând, copiii-conducere pe un rând
-   orizontal dedesubt, conectați prin linii SVG; cardurile de grup vin după, tot pe orizontală */
-.org-flow-block{display:inline-flex;flex-direction:column;align-items:flex-start;vertical-align:top}
-.org-flow-self{margin-bottom:6px}
-.org-flow-children-row{display:flex;flex-direction:row;align-items:flex-start;gap:36px;padding-top:18px;position:relative}
-.org-flow-child-col{display:flex;flex-direction:column;align-items:flex-start}
-.org-flow-connector-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
-.org-flow-connector-svg path{stroke:var(--slate-l);stroke-width:1.5;fill:none}
-.org-node-children-cards{margin-top:10px}
 .org-stat-pill{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--navy-ll);color:var(--navy)}
 
 /* Carduri grupate de angajați (operatori), gen organigramă pe echipe */
@@ -448,29 +436,24 @@ tr:hover td{background:var(--slate-ll)}
 
       <!-- ANGAJAȚI -->
       <div class="page" id="page-angajati">
-        <div class="card" style="margin-bottom:1rem">
-          <div class="card-title" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
-            <span style="display:flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Organigramă</span>
-            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-              <div class="org-tree-controls" style="margin-bottom:0">
-                <button class="btn btn-sm" onclick="orgZoom(-0.1)" title="Micșorează">−</button>
-                <span class="zoom-label" id="org-zoom-label">100%</span>
-                <button class="btn btn-sm" onclick="orgZoom(0.1)" title="Mărește">+</button>
-                <button class="btn btn-sm" onclick="orgZoomReset()" title="Resetează zoom">Reset</button>
+        <div class="grid-2">
+          <div class="card" style="height:fit-content">
+            <div class="card-title" style="justify-content:space-between">
+              <span style="display:flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Organigramă</span>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm dev-only" style="display:none" onclick="document.getElementById('org-import-file').click()" title="Import angajați din fișier Excel de pontaj"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import Excel</button>
+                <input type="file" id="org-import-file" accept=".xlsx,.xls" style="display:none" onchange="handleOrgImportFile(event)"/>
+                <button class="btn btn-sm btn-primary" onclick="openOrgModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nod nou</button>
               </div>
-              <button class="btn btn-sm" onclick="exportOrgPDF()" title="Exportă organigrama vizibilă în PDF (A3 Landscape)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Export PDF</button>
-              <button class="btn btn-sm dev-only" style="display:none" onclick="document.getElementById('org-import-file').click()" title="Import angajați din fișier Excel de pontaj"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import Excel</button>
-              <input type="file" id="org-import-file" accept=".xlsx,.xls" style="display:none" onchange="handleOrgImportFile(event)"/>
-              <button class="btn btn-sm btn-primary" onclick="openOrgModal()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nod nou</button>
             </div>
+            <div id="org-tree" class="org-tree"><div class="loading-center"><div class="spinner"></div></div></div>
           </div>
-          <div id="org-tree" class="org-tree"><div class="loading-center"><div class="spinner"></div></div></div>
-        </div>
-        <div id="angajat-detail-panel">
-          <div class="card">
-            <div style="text-align:center;padding:2rem;color:var(--text3)">
-              <svg style="width:48px;height:48px;fill:none;stroke:currentColor;stroke-width:1.5;opacity:.4" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-              <div style="margin-top:.75rem;font-size:13px">Selectează un nod din organigramă</div>
+          <div id="angajat-detail-panel">
+            <div class="card">
+              <div style="text-align:center;padding:2rem;color:var(--text3)">
+                <svg style="width:48px;height:48px;fill:none;stroke:currentColor;stroke-width:1.5;opacity:.4" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                <div style="margin-top:.75rem;font-size:13px">Selectează un nod din organigramă</div>
+              </div>
             </div>
           </div>
         </div>
@@ -1935,8 +1918,6 @@ async function processInvoiere(id,status){
 const ORG_TIP_LABELS={director:'Director',manager_dep:'Manager Departament',manager:'Manager',sectie:'Secție',sef_formatie:'Șef Formație',workcenter:'Workcenter',angajat:'Angajat'};
 const ORG_TIP_ICONS={director:'👑',manager_dep:'🏢',manager:'👔',sectie:'🏭',sef_formatie:'⚙️',workcenter:'🔧',angajat:'👤'};
 
-let orgZoomLevel=1;
-
 function renderOrgTree(){
   const el=document.getElementById('org-tree');
   const roots=allOrgNodes.filter(n=>!n.parent_id);
@@ -1945,120 +1926,7 @@ function renderOrgTree(){
       '<div style="font-size:28px;margin-bottom:.5rem">🏭</div>Organigramă goală.<br>Apasă <b>Nod nou</b> pentru a începe.</div>';
     return;
   }
-  el.innerHTML='<div class="org-tree-wrap" id="org-tree-wrap" style="transform:scale('+orgZoomLevel+')">'+
-    roots.map(n=>renderOrgNode(n)).join('')+'</div>';
-  requestAnimationFrame(drawOrgConnectors);
-}
-
-function orgZoom(delta){
-  orgZoomLevel=Math.max(0.4,Math.min(1.5,orgZoomLevel+delta));
-  const wrap=document.getElementById('org-tree-wrap');
-  if(wrap) wrap.style.transform='scale('+orgZoomLevel+')';
-  document.getElementById('org-zoom-label').textContent=Math.round(orgZoomLevel*100)+'%';
-  requestAnimationFrame(drawOrgConnectors);
-}
-function orgZoomReset(){
-  orgZoomLevel=1;
-  const wrap=document.getElementById('org-tree-wrap');
-  if(wrap) wrap.style.transform='scale(1)';
-  document.getElementById('org-zoom-label').textContent='100%';
-  requestAnimationFrame(drawOrgConnectors);
-}
-
-// Desenează liniile de conectare (manager -> fiecare copil de conducere) folosind pozițiile
-// reale din DOM după randare. Se recalculează ori de câte ori arborele se re-randează,
-// se extinde/restrânge un nod, sau se schimbă zoom-ul.
-function drawOrgConnectors(){
-  document.querySelectorAll('.org-flow-children-row').forEach(row=>{
-    const svg=row.querySelector('.org-flow-connector-svg');
-    const parentAnchor=row.parentElement.querySelector(':scope > .org-flow-self .org-node-row');
-    if(!svg||!parentAnchor) return;
-    const rowRect=row.getBoundingClientRect();
-    const pRect=parentAnchor.getBoundingClientRect();
-    const scale=orgZoomLevel||1;
-    const pX=(pRect.left+pRect.width/2-rowRect.left)/scale;
-    const pBottom=0; // punctul de plecare e chiar deasupra rândului de copii (top:0 al rândului)
-    const cols=row.querySelectorAll(':scope > .org-flow-child-col');
-    let maxH=0;
-    const paths=[];
-    cols.forEach(col=>{
-      const childAnchor=col.querySelector(':scope > .org-flow-self .org-node-row, :scope > .org-node-row');
-      if(!childAnchor) return;
-      const cRect=childAnchor.getBoundingClientRect();
-      const cX=(cRect.left+cRect.width/2-rowRect.left)/scale;
-      const cY=(cRect.top-rowRect.top)/scale;
-      maxH=Math.max(maxH,cY);
-      const midY=cY/2;
-      paths.push(`M${pX},${pBottom} L${pX},${midY} L${cX},${midY} L${cX},${cY}`);
-    });
-    svg.setAttribute('width',Math.ceil(rowRect.width/scale));
-    svg.setAttribute('height',Math.ceil(maxH+4));
-    svg.innerHTML=paths.map(d=>`<path d="${d}"/>`).join('');
-  });
-}
-window.addEventListener('resize',()=>requestAnimationFrame(drawOrgConnectors));
-
-// Exportă organigrama așa cum e vizibilă acum (doar nodurile expandate, fără cele restrânse)
-// într-o fereastră de print, scalată automat pe o pagină A3 Landscape.
-function exportOrgPDF(){
-  const wrap=document.getElementById('org-tree-wrap');
-  if(!wrap){toast('Organigrama nu este încărcată','error');return;}
-
-  // Clonăm doar conținutul vizibil (elementele cu display:none rămân excluse, pentru că
-  // cloneNode pe innerHTML păstrează inline style-urile, inclusiv display:none)
-  const clone=wrap.cloneNode(true);
-  clone.style.transform='none'; // eliminăm zoom-ul curent, scalarea se face separat la print
-  // Eliminăm elementele interactive care nu au sens pe hârtie (butoane editare/extindere)
-  clone.querySelectorAll('.org-node-toggle,.btn-ghost,.org-card-item-edit').forEach(b=>b.remove());
-
-  const printWin=window.open('','_blank');
-  printWin.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Organigramă</title>
-  <style>
-    @page{size:A3 landscape;margin:10mm}
-    *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
-    body{padding:0}
-    .org-flow-block{display:inline-flex;flex-direction:column;align-items:flex-start;vertical-align:top}
-    .org-flow-self{margin-bottom:6px}
-    .org-flow-children-row{display:flex;flex-direction:row;align-items:flex-start;gap:28px;padding-top:16px;position:relative}
-    .org-flow-child-col{display:flex;flex-direction:column;align-items:flex-start}
-    .org-flow-connector-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
-    .org-flow-connector-svg path{stroke:#6b7fa3;stroke-width:1.2;fill:none}
-    .org-node-row{display:flex;align-items:center;gap:6px;padding:6px 9px;border-radius:6px;border:1.2px solid #d8dee8;background:#fff;white-space:nowrap}
-    .org-node-row.selected{background:#fdf0e8;border-color:#e8610a}
-    .org-node-icon{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;background:#eef1f8}
-    .org-node-label{font-size:11px;font-weight:700;color:#1a2744}
-    .org-node-sub{font-size:9px;color:#6b7fa3;margin-top:1px}
-    .org-node-stats{display:flex;gap:3px}
-    .org-stat-pill{font-size:8px;font-weight:700;padding:1px 5px;border-radius:8px;background:#eef1f8;color:#1a2744}
-    .org-node-children-cards{margin-top:8px}
-    .org-card-grid{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;padding:8px 0 2px}
-    .org-card-group{flex:0 0 auto;width:150px;background:#eef1f8;border:1px solid #d8dee8;border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:4px}
-    .org-card-group-title{font-size:9px;font-weight:700;color:#1a2744;text-transform:uppercase;padding:1px 2px 3px;border-bottom:1px solid #d8dee8;margin-bottom:1px}
-    .org-card-item{background:#fff;border:1px solid #d8dee8;border-radius:5px;padding:4px 6px}
-    .org-card-item-name{font-size:9.5px;font-weight:600;color:#1a2744;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .org-card-item-sub{font-size:8px;color:#6b7fa3}
-    #print-root{transform-origin:top left}
-  </style></head>
-  <body>
-    <h2 style="font-size:14px;margin-bottom:10px;color:#1a2744">Organigramă — ${new Date().toLocaleDateString('ro-RO')}</h2>
-    <div id="print-root">${clone.outerHTML}</div>
-    <script>
-      // Scalează automat conținutul ca să încapă pe lățimea paginii A3 landscape (~390mm utili)
-      window.onload=function(){
-        const root=document.getElementById('print-root');
-        const maxWidthMm=400; // A3 landscape ~420mm - margini
-        const pxPerMm=96/25.4;
-        const maxWidthPx=maxWidthMm*pxPerMm;
-        const actualWidth=root.scrollWidth;
-        if(actualWidth>maxWidthPx){
-          const scale=maxWidthPx/actualWidth;
-          root.style.transform='scale('+scale+')';
-        }
-        setTimeout(()=>window.print(),300);
-      };
-    <\/script>
-  </body></html>`);
-  printWin.document.close();
+  el.innerHTML='<div class="org-tree-wrap">'+roots.map(n=>renderOrgNode(n)).join('')+'</div>';
 }
 
 function countSubAngajati(nodeId){
@@ -2122,14 +1990,9 @@ function renderOrgNode(node,depth=0){
     ?`<button class="org-node-toggle" onclick="event.stopPropagation();toggleOrgNode('${node.id}')" title="Extinde/Restrânge">▾</button>`
     :`<span style="width:20px;flex-shrink:0"></span>`;
 
-  // Copiii de conducere (Manager/Șef Formație/etc) sunt afișați pe un rând ORIZONTAL sub
-  // nodul curent, fiecare cu propriul sub-arbore dedesubt, conectați prin linii desenate de
-  // drawOrgConnectors() după randare (vezi renderOrgTree).
+  // Copiii de conducere (Manager/Șef Formație/etc) continuă arborele vertical clasic, recursiv.
   const copiiConducere=children.filter(ch=>ch.tip!=='angajat');
-  const coloaneCopii=copiiConducere.map(ch=>`<div class="org-flow-child-col">${renderOrgNode(ch,depth+1)}</div>`).join('');
-  const subArbore=copiiConducere.length
-    ?`<div class="org-flow-children-row"><svg class="org-flow-connector-svg"></svg>${coloaneCopii}</div>`
-    :'';
+  const subArbore=copiiConducere.map(ch=>renderOrgNode(ch,depth+1)).join('');
 
   // Dacă NICIUNUL dintre copiii de conducere nu are, la rândul lui, alți copii de conducere
   // sub el (adică ei sunt "frunze" — ex. Șefii de Formație, fără sub-manageri proprii), atunci
@@ -2140,21 +2003,19 @@ function renderOrgNode(node,depth=0){
     copiiConducere.every(ch=>allOrgNodes.filter(n=>n.parent_id===ch.id&&n.tip!=='angajat').length===0);
 
   const cardurileHtml=(!isAngajat&&esteFinalDeRamuraDeConducere)
-    ?`<div class="org-node-children-cards">${renderAngajatiCarduri(collectAngajatiSubarbore(node.id))}</div>`
+    ?renderAngajatiCarduri(collectAngajatiSubarbore(node.id))
     :'';
 
-  return `<div class="org-flow-block org-node" data-node-id="${node.id}">
-    <div class="org-flow-self">
-      <div class="org-node-row${isSelected?' selected':''}" onclick="selectOrgNode('${node.id}')">
-        ${toggleBtn}
-        <div class="org-node-icon org-type-${node.tip}">${ORG_TIP_ICONS[node.tip]||'📁'}</div>
-        <div class="org-node-main">
-          <div class="org-node-label">${label}</div>
-          <div class="org-node-sub">${sub}</div>
-        </div>
-        <div class="org-node-stats">${stats}</div>
-        <button class="btn btn-ghost btn-sm" style="padding:3px 7px;margin-left:4px" onclick="event.stopPropagation();openOrgModal('${node.id}')" title="Editează">✏️</button>
+  return `<div class="org-node">
+    <div class="org-node-row${isSelected?' selected':''}" onclick="selectOrgNode('${node.id}')">
+      ${toggleBtn}
+      <div class="org-node-icon org-type-${node.tip}">${ORG_TIP_ICONS[node.tip]||'📁'}</div>
+      <div class="org-node-main">
+        <div class="org-node-label">${label}</div>
+        <div class="org-node-sub">${sub}</div>
       </div>
+      <div class="org-node-stats">${stats}</div>
+      <button class="btn btn-ghost btn-sm" style="padding:3px 7px;margin-left:4px" onclick="event.stopPropagation();openOrgModal('${node.id}')" title="Editează">✏️</button>
     </div>
     <div class="org-node-children" id="org-children-${node.id}">
       ${subArbore}${cardurileHtml}
@@ -2195,7 +2056,6 @@ function renderAngajatiCarduri(angajatNodes){
 function toggleOrgNode(id){
   const el=document.getElementById('org-children-'+id);
   if(el)el.style.display=el.style.display==='none'?'':'none';
-  requestAnimationFrame(drawOrgConnectors);
 }
 function selectOrgNode(id){
   selectedOrgNodeId=id;
