@@ -150,8 +150,8 @@ tr:hover td{background:var(--slate-ll)}
 .org-stat-pill{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--navy-ll);color:var(--navy)}
 
 /* Carduri grupate de angajați (operatori), gen organigramă pe echipe */
-.org-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;padding:10px 0 2px}
-.org-card-group{background:var(--navy-ll);border:1px solid var(--border);border-radius:var(--r2);padding:8px;display:flex;flex-direction:column;gap:5px}
+.org-card-grid{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px;padding:10px 0 2px}
+.org-card-group{flex:0 0 auto;width:190px;background:var(--navy-ll);border:1px solid var(--border);border-radius:var(--r2);padding:8px;display:flex;flex-direction:column;gap:5px}
 .org-card-group-title{font-size:11px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.03em;padding:2px 4px 4px;border-bottom:1px solid var(--border-d);margin-bottom:2px}
 .org-card-item{position:relative;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:6px 8px;cursor:pointer;transition:.12s}
 .org-card-item:hover{border-color:var(--orange);background:var(--orange-l)}
@@ -193,6 +193,24 @@ tr:hover td{background:var(--slate-ll)}
 .tip-CM{background:var(--amber-l);color:var(--amber)}.tip-INV{background:var(--purple-l);color:var(--purple)}
 .tip-CFP{background:var(--red-l);color:var(--red)}.tip-AB{background:var(--gray-l);color:var(--gray)}
 .tip-SL{background:var(--amber-l);color:#7b3f00}
+
+/* Tabel pontaj LUNA: angajați pe rânduri, zile pe coloane */
+.pont-month-table{border-collapse:collapse;font-size:12px;white-space:nowrap}
+.pont-month-table th,.pont-month-table td{border:1px solid var(--border);padding:0}
+.pont-month-th-name{position:sticky;left:0;z-index:2;background:var(--navy-ll);min-width:170px;padding:8px 10px!important;text-align:left;font-size:11px;font-weight:700;color:var(--navy);text-transform:uppercase}
+.pont-month-th-day{min-width:34px;padding:5px 2px!important;text-align:center;font-size:11px;font-weight:700;color:var(--text3);background:var(--bg)}
+.pont-month-th-day .dow{font-size:9px;font-weight:600;color:var(--text3);opacity:.7}
+.pont-month-th-day.weekend{background:#f0f1f5}
+.pont-month-th-day.sarbatoare{background:var(--amber-l);color:#7b3f00}
+.pont-month-th-day.today{background:var(--orange-l);color:var(--orange-d)}
+.pont-month-td-name{position:sticky;left:0;z-index:1;background:var(--card);padding:6px 10px!important;display:flex;align-items:center;gap:8px}
+.pont-month-td-name .nm{font-size:12px;font-weight:600;color:var(--navy)}
+.pont-month-td-name .fn{font-size:10.5px;color:var(--text3)}
+.pont-month-td-cell{text-align:center;cursor:pointer;transition:.1s;height:38px}
+.pont-month-td-cell:hover{background:var(--orange-l)}
+.pont-month-td-cell.weekend{background:#f8f9fc}
+.pont-month-td-cell.today{background:#fff6ee;box-shadow:inset 0 0 0 1.5px var(--orange)}
+.pont-month-table tbody tr:hover .pont-month-td-name{background:var(--navy-ll)}
 .pont-hours{font-size:9px;color:var(--text3);margin-top:1px}
 
 /* Zoom SAPTAMANA */
@@ -1486,60 +1504,51 @@ function clearSelection(){
 
 // ── ZOOM LUNĂ: un singur angajat (primul filtrat, sau cel propriu) ──
 function renderLuna(angajati,sarb,today){
-  // Dacă admin și mai mulți angajați filtrați și niciunul explicit ales - arătăm listă + alegere rapidă
-  let ang=angajati.length===1?angajati[0]:null;
-  if(isAdmin()&&!ang){
-    // afișăm un selector simplu de angajat pentru vizualizare lunară detaliată
-    return `<div class="card">
-      <div style="margin-bottom:1rem;font-size:13px;color:var(--text3)">Mai mulți angajați corespund filtrului (${angajati.length}). Pentru vizualizarea lunară pe zile, selectează un angajat:</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
-        ${angajati.map(a=>`<div class="angajat-card" onclick="document.getElementById('pont-search').value='${angNume(a).replace(/'/g,"\\'")}'; renderPontaj();">
-          <div class="ang-avatar" style="background:var(--orange-l);color:var(--orange-d)">${(angNume(a)).split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
-          <div><div style="font-size:13px;font-weight:600">${angNume(a)}</div><div style="font-size:11px;color:var(--text3)">${a.functie||''}</div></div>
-        </div>`).join('')}
-      </div>
-    </div>`;
-  }
-  if(!ang) ang=angajati[0];
-  const pontMap={};allPontaj.filter(p=>p.angajat_id===ang.id).forEach(p=>{pontMap[p.data]=p;});
-
   const d=pontajDate,y=d.getFullYear(),m=d.getMonth();
   const zileNum=new Date(y,m+1,0).getDate();
-  const primaZi=(new Date(y,m,1).getDay()+6)%7;
-  let html=`<div class="card">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid var(--border)">
-      <div class="ang-avatar" style="background:var(--orange-l);color:var(--orange-d)">${(angNume(ang)).split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
-      <div><div style="font-size:14px;font-weight:700">${angNume(ang)}</div><div style="font-size:12px;color:var(--text3)">${ang.functie||''}</div></div>
+  const pontMap={};allPontaj.forEach(p=>{pontMap[p.angajat_id+'_'+p.data]=p;});
+
+  const zileArr=Array.from({length:zileNum},(_,i)=>i+1);
+  const dowNames=['D','L','Ma','Mi','J','V','S'];
+
+  let html=`<div class="card" style="padding:0;overflow:hidden">
+    <div style="overflow-x:auto">
+    <table class="pont-month-table">
+      <thead>
+        <tr>
+          <th class="pont-month-th-name">Angajat</th>
+          ${zileArr.map(z=>{
+            const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(z).padStart(2,'0')}`;
+            const dow=new Date(ds).getDay();const we=dow===0||dow===6;const isSarb=sarb.has(ds);
+            const isToday=ds===today;
+            return `<th class="pont-month-th-day${we?' weekend':''}${isSarb?' sarbatoare':''}${isToday?' today':''}"><div>${z}</div><div class="dow">${dowNames[dow]}</div></th>`;
+          }).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${angajati.map(ang=>{
+          const ini=(angNume(ang)).split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+          return `<tr>
+            <td class="pont-month-td-name">
+              <div class="ang-avatar" style="width:26px;height:26px;font-size:10px;background:var(--orange-l);color:var(--orange-d)">${ini}</div>
+              <div><div class="nm">${angNume(ang)}</div><div class="fn">${ang.functie||''}</div></div>
+            </td>
+            ${zileArr.map(z=>{
+              const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(z).padStart(2,'0')}`;
+              const dow=new Date(ds).getDay();const we=dow===0||dow===6;const isSarb=sarb.has(ds);
+              const pont=pontMap[ang.id+'_'+ds];const isToday=ds===today;
+              let cls='pont-month-td-cell';if(we)cls+=' weekend';if(isToday)cls+=' today';
+              const click=isAdmin()?`onclick="editingPontajAngajatId='${ang.id}';openPontajModal('${ds}')"`:'';
+              let inner='';
+              if(isSarb) inner=`<span class="pont-tip-badge tip-SL">SL</span>`;
+              else if(pont) inner=`<span class="pont-tip-badge tip-${pont.tip}">${pont.tip}</span>`;
+              return `<td class="${cls}" ${click}>${inner}</td>`;
+            }).join('')}
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
     </div>
-    <div class="pont-month-grid">`;
-  ['Lun','Mar','Mie','Joi','Vin','Sâm','Dum'].forEach(z=>html+=`<div class="pont-day-hdr">${z}</div>`);
-  for(let i=0;i<primaZi;i++) html+=`<div class="pont-cell empty"></div>`;
-  for(let z=1;z<=zileNum;z++){
-    const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(z).padStart(2,'0')}`;
-    const dow=new Date(ds).getDay();const we=dow===0||dow===6;const isSarb=sarb.has(ds);
-    const pont=pontMap[ds];const isToday=ds===today;
-    let cls='pont-cell';if(we)cls+=' weekend';if(isSarb)cls+=' sarbatoare';if(isToday)cls+=' today';
-    let inner=`<div class="pont-day-num">${z}</div>`;
-    if(isSarb){inner+=`<div class="pont-tip-badge tip-SL">SL</div>`;}
-    else if(pont){
-      inner+=`<div class="pont-tip-badge tip-${pont.tip}">${pont.tip}</div>`;
-      if(pont.ora_intrare)inner+=`<div class="pont-hours">${pont.ora_intrare.slice(0,5)}–${(pont.ora_iesire||'').slice(0,5)}</div>`;
-      else if(pont.ore_lucrate)inner+=`<div class="pont-hours">${pont.ore_lucrate}h</div>`;
-    }
-    const click=isAdmin()?`onclick="editingPontajAngajatId='${ang.id}';openPontajModal('${ds}')"`:pont?'':`onclick="openInvoireModalPrefilled('${ds}')"`;
-    html+=`<div class="${cls}" ${click}>${inner}</div>`;
-  }
-  html+=`</div></div>`;
-  // Sumar
-  const pontAng=allPontaj.filter(p=>p.angajat_id===ang.id);
-  const cnts={P:0,CO:0,CM:0,INV:0,CFP:0,AB:0};
-  pontAng.forEach(p=>{if(cnts[p.tip]!==undefined)cnts[p.tip]++;});
-  const oreTotal=pontAng.reduce((s,p)=>s+(p.ore_lucrate||0),0);
-  html+=`<div class="grid-4" style="margin-top:1rem">
-    ${statCard('Prezent',cnts.P,'var(--green)','var(--green-l)','M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4 12 14.01l-3-3')}
-    ${statCard('CO',cnts.CO,'var(--navy)','var(--navy-ll)','M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z')}
-    ${statCard('CM / Invoieli',cnts.CM+cnts.INV,'var(--amber)','var(--amber-l)','M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z')}
-    ${statCard('Ore lucrate',oreTotal+'h','var(--orange)','var(--orange-l)','M12 20V10M18 20V4M6 20v-4')}
   </div>`;
   return html;
 }
@@ -1937,6 +1946,18 @@ function countSubNoduri(nodeId){
   return count;
 }
 
+// Colectează recursiv TOATE nodurile de tip angajat dintr-un subarbore de conducere
+// (indiferent de la ce nivel/părinte vin), pentru a le afișa pe un singur rând de carduri.
+function collectAngajatiSubarbore(nodeId){
+  const children=allOrgNodes.filter(n=>n.parent_id===nodeId);
+  let result=[];
+  for(const ch of children){
+    if(ch.tip==='angajat') result.push(ch);
+    else result=result.concat(collectAngajatiSubarbore(ch.id));
+  }
+  return result;
+}
+
 function renderOrgNode(node,depth=0){
   const children=allOrgNodes.filter(n=>n.parent_id===node.id);
   const ang=allAngajati.find(a=>a.org_node_id===node.id);
@@ -1969,14 +1990,21 @@ function renderOrgNode(node,depth=0){
     ?`<button class="org-node-toggle" onclick="event.stopPropagation();toggleOrgNode('${node.id}')" title="Extinde/Restrânge">▾</button>`
     :`<span style="width:20px;flex-shrink:0"></span>`;
 
-  // Separăm copiii direcți în două categorii: angajații (afișați grupați pe carduri, după
-  // câmpul "grup") și restul nodurilor de conducere (afișate ca arbore clasic, recursiv).
-  // Funcționează indiferent dacă nodul are doar angajați, doar sub-noduri, sau un mix din ambele.
-  const copiiAngajati=children.filter(ch=>ch.tip==='angajat');
-  const copiiAlteTipuri=children.filter(ch=>ch.tip!=='angajat');
-  const childrenHtml=
-    (copiiAngajati.length?renderAngajatiCarduri(copiiAngajati):'')+
-    copiiAlteTipuri.map(ch=>renderOrgNode(ch,depth+1)).join('');
+  // Copiii de conducere (Manager/Șef Formație/etc) continuă arborele vertical clasic, recursiv.
+  const copiiConducere=children.filter(ch=>ch.tip!=='angajat');
+  const subArbore=copiiConducere.map(ch=>renderOrgNode(ch,depth+1)).join('');
+
+  // Dacă NICIUNUL dintre copiii de conducere nu are, la rândul lui, alți copii de conducere
+  // sub el (adică ei sunt "frunze" — ex. Șefii de Formație, fără sub-manageri proprii), atunci
+  // AICI se termină lanțul de conducere al acestei ramuri. Colectăm și afișăm o singură dată,
+  // pe un rând comun, TOȚI angajații din întreg subarborele acestui nod (cei direcți + cei de
+  // sub Șefii de Formație + cei de sub orice alt sub-nivel), exact ca în organigrama de referință.
+  const esteFinalDeRamuraDeConducere=copiiConducere.length===0||
+    copiiConducere.every(ch=>allOrgNodes.filter(n=>n.parent_id===ch.id&&n.tip!=='angajat').length===0);
+
+  const cardurileHtml=(!isAngajat&&esteFinalDeRamuraDeConducere)
+    ?renderAngajatiCarduri(collectAngajatiSubarbore(node.id))
+    :'';
 
   return `<div class="org-node">
     <div class="org-node-row${isSelected?' selected':''}" onclick="selectOrgNode('${node.id}')">
@@ -1990,7 +2018,7 @@ function renderOrgNode(node,depth=0){
       <button class="btn btn-ghost btn-sm" style="padding:3px 7px;margin-left:4px" onclick="event.stopPropagation();openOrgModal('${node.id}')" title="Editează">✏️</button>
     </div>
     <div class="org-node-children" id="org-children-${node.id}">
-      ${childrenHtml}
+      ${subArbore}${cardurileHtml}
     </div>
   </div>`;
 }
