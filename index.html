@@ -2486,7 +2486,7 @@ function renderProductieTable(rows){
   tbody.innerHTML=rows.length?rows.map(r=>{
     const timpNormat=(r.manufact_qty||0)*(r.run_tm||0)+(r.setup_tm||0); // minute
     const timpRaportat=r.used_tm_movex_min||0; // minute
-    const eficienta=timpNormat>0?(timpRaportat/timpNormat*100):null;
+    const eficienta=timpRaportat>0?(timpNormat/timpRaportat*100):null;
     totalNormat+=timpNormat;totalRaportat+=timpRaportat;totalQty+=(r.manufact_qty||0);
     const ang=allAngajati.find(a=>a.id===r.angajat_id);
     const effColor=eficienta==null?'var(--text3)':eficienta>=90?'var(--green)':eficienta>=70?'var(--amber)':'var(--red)';
@@ -2504,7 +2504,7 @@ function renderProductieTable(rows){
 
   document.querySelectorAll('#page-productie thead .admin-only').forEach(el=>el.style.display=isAd?'':'none');
 
-  const eficientaTotal=totalNormat>0?(totalRaportat/totalNormat*100):0;
+  const eficientaTotal=totalRaportat>0?(totalNormat/totalRaportat*100):0;
   document.getElementById('prod-summary').innerHTML=`
     ${statCard('Operații',rows.length,'var(--navy)','var(--navy-ll)','M9 11l3 3L22 4')}
     ${statCard('Cantitate totală',totalQty,'var(--orange)','var(--orange-l)','M12 20V10M18 20V4M6 20v-4')}
