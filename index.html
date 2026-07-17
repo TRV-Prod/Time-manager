@@ -2496,7 +2496,7 @@ async function handleProductieImportFile(ev){
   if(document.getElementById('page-productie').classList.contains('active')) renderProductieRaport();
 }
 
-function initProductie(){
+async function initProductie(){
   const isAd=isAdmin();
   document.querySelectorAll('#page-productie .admin-only').forEach(el=>el.style.display=isAd?'':'none');
   if(isAd){
@@ -2505,11 +2505,27 @@ function initProductie(){
     const selSec=document.getElementById('prod-sectie-sel');
     selSec.innerHTML='<option value="">Toate secțiile</option>'+allSectii.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
   }
-  // Workcenter-urile se populează din valorile reale deja importate (distincte), nu dintr-o listă fixă
   populeazaWorkcenterSelect();
-  const today=fmtDateISO(new Date());
-  if(!document.getElementById('prod-data-start').value) document.getElementById('prod-data-start').value=today;
-  document.getElementById('prod-data-end-wrap').style.display=document.getElementById('prod-mod-perioada').value==='interval'?'flex':'none';
+
+  // Setează data inițială DOAR dacă nu a fost deja setată manual anterior în această sesiune
+  if(!document.getElementById('prod-data-start').value){
+    const today=fmtDateISO(new Date());
+    // Verificăm dacă există date pentru azi — dacă nu, luăm ultima zi cu date reale din DB
+    let q=sb.from('productie_evenimente').select('transaction_dt').order('transaction_dt',{ascending:false}).limit(1);
+    if(!isAd&&currentProfile?.angajat_id) q=q.eq('angajat_id',currentProfile.angajat_id);
+    const {data:latest}=await q;
+    const ultimaZi=latest?.[0]?.transaction_dt;
+    if(ultimaZi&&ultimaZi!==today){
+      // Există date, dar nu pentru azi — setăm intervalul pe ultima lună cu date
+      document.getElementById('prod-mod-perioada').value='interval';
+      document.getElementById('prod-data-start').value=ultimaZi.slice(0,7)+'-01'; // prima zi a lunii respective
+      document.getElementById('prod-data-end').value=ultimaZi;
+      document.getElementById('prod-data-end-wrap').style.display='flex';
+    } else {
+      document.getElementById('prod-data-start').value=today;
+      document.getElementById('prod-data-end-wrap').style.display='none';
+    }
+  }
   renderProductieRaport();
 }
 document.getElementById('prod-mod-perioada')?.addEventListener?.('change',function(){
