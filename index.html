@@ -1435,6 +1435,9 @@ function loadFilter(prefix,key){
 function setSelectValue(id,val){const el=document.getElementById(id);if(el&&val!=null)el.value=val;}
 function setInputValue(id,val){const el=document.getElementById(id);if(el&&val!=null)el.value=val;}
 
+const PAGE_TITLES={dashboard:'Tablou de bord',pontaj:'Pontaj',invoiri:'Cereri invoiri',angajati:'Angajați',calendar:'Calendar',utilizatori:'Utilizatori',productie:'Producție'};
+const PAGE_SUBS={dashboard:'Bun venit!',pontaj:'Vizualizare și editare pontaj',invoiri:'Cereri de invoire',angajati:'Structură organizatorică',calendar:'Schimburi și sărbători legale',utilizatori:'Conturi și drepturi de acces',productie:'Raport eficiență producție'};
+
 function showPage(id){
   sessionStorage.setItem('pontaj_last_page',id);
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
