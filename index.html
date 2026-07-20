@@ -1721,7 +1721,10 @@ function renderLuna(angajati,sarb,today){
           return `<tr>
             <td class="pont-month-td-name">
               <div class="ang-avatar" style="width:26px;height:26px;font-size:10px;background:var(--orange-l);color:var(--orange-d)">${ini}</div>
-              <div><div class="nm">${angNume(ang)}</div><div class="fn">${ang.functie||''}</div></div>
+              <div>
+                <div class="nm">${angNume(ang)}</div>
+                <div class="fn">${ang.nr_matricol?`<span style="font-family:monospace;font-size:10px;color:var(--slate-l)">${ang.nr_matricol}</span>${ang.functie?' · ':''}`:''}${ang.functie||''}</div>
+              </div>
             </td>
             ${zileArr.map(z=>{
               const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(z).padStart(2,'0')}`;
@@ -1731,7 +1734,16 @@ function renderLuna(angajati,sarb,today){
               const click=isAdmin()?`onclick="editingPontajAngajatId='${ang.id}';openPontajModal('${ds}')"`:'';
               let inner='';
               if(isSarb) inner=`<span class="pont-tip-badge tip-SL">SL</span>`;
-              else if(pont) inner=`<span class="pont-tip-badge tip-${pont.tip}">${pont.tip}</span>`;
+              else if(pont){
+                if(pont.tip==='P'){
+                  // Afișăm orele lucrate în loc de "P"
+                  const ore=pont.ore_lucrate||(pont.ora_intrare&&pont.ora_iesire?
+                    Math.round((new Date('2000-01-01T'+pont.ora_iesire)-new Date('2000-01-01T'+pont.ora_intrare))/3600000*10)/10:null);
+                  inner=`<span style="font-size:11px;font-weight:700;color:var(--green)">${ore!=null?ore:'P'}</span>`;
+                } else {
+                  inner=`<span class="pont-tip-badge tip-${pont.tip}">${pont.tip}</span>`;
+                }
+              }
               return `<td class="${cls}" ${click}>${inner}</td>`;
             }).join('')}
           </tr>`;
@@ -1771,16 +1783,30 @@ function renderSaptamana(angajati,sarb,today){
       const click=isAdmin()?`onclick="editingPontajAngajatId='${ang.id}';openPontajModal('${ds}')"`:'';
       let inner='';
       if(isSarb) inner=`<span class="pont-tip-badge tip-SL">SL</span>`;
-      else if(pont) inner=`<span class="pont-tip-badge tip-${pont.tip}">${pont.tip}</span>${pont.ora_intrare?`<div class="pont-hours">${pont.ora_intrare.slice(0,5)}–${(pont.ora_iesire||'').slice(0,5)}</div>`:pont.ore_lucrate?`<div class="pont-hours">${pont.ore_lucrate}h</div>`:''}`;
+      else if(pont){
+        if(pont.tip==='P'){
+          const ore=pont.ore_lucrate||(pont.ora_intrare&&pont.ora_iesire?Math.round((new Date('2000-01-01T'+pont.ora_iesire)-new Date('2000-01-01T'+pont.ora_intrare))/3600000*10)/10:null);
+          inner=`<span style="font-size:11px;font-weight:700;color:var(--green)">${ore!=null?ore:'P'}</span>${pont.ora_intrare?`<div class="pont-hours">${pont.ora_intrare.slice(0,5)}–${(pont.ora_iesire||'').slice(0,5)}</div>`:''}`;
+        } else {
+          inner=`<span class="pont-tip-badge tip-${pont.tip}">${pont.tip}</span>`;
+        }
+      }
       html+=`<div class="${cls}" ${click}>${inner}</div>`;
-    });
-  });
-  html+=`</div></div>`;
   if(angajati.length>40) html+=`<div class="alert alert-info" style="margin-top:.75rem">Se afișează primii 40 din ${angajati.length} angajați. Folosește căutarea pentru a restrânge lista.</div>`;
   return html;
 }
 
 // ── ZOOM ZI: carduri cu toți angajații filtrați + checkbox selecție ──
+function renderPontZiCard(pont){
+  if(pont.tip==='P'){
+    const ore=pont.ore_lucrate||(pont.ora_intrare&&pont.ora_iesire?
+      Math.round((new Date('2000-01-01T'+pont.ora_iesire)-new Date('2000-01-01T'+pont.ora_intrare))/3600000*10)/10:null);
+    const oraStr=pont.ora_intrare?`<div style="font-size:11px;color:var(--text3);margin-top:3px">${pont.ora_intrare.slice(0,5)} – ${(pont.ora_iesire||'').slice(0,5)}</div>`:'';
+    return `<span style="font-weight:700;color:var(--green);font-size:15px">${ore!=null?ore+'h':'P'}</span>${oraStr}`;
+  }
+  const oraStr=pont.ora_intrare?`<div style="font-size:11px;color:var(--text3);margin-top:3px">${pont.ora_intrare.slice(0,5)} – ${(pont.ora_iesire||'').slice(0,5)}</div>`:pont.ore_lucrate?`<div style="font-size:11px;color:var(--text3);margin-top:3px">${pont.ore_lucrate}h</div>`:'';
+  return `<span class="pont-tip-badge tip-${pont.tip}">${tipLabel(pont.tip)}</span>${oraStr}`;
+}
 function renderZi(angajati,sarb,today){
   const ds=fmtDateISO(pontajDate);
   const isSarb=sarb.has(ds);
@@ -1797,10 +1823,13 @@ function renderZi(angajati,sarb,today){
       <div ${click} style="cursor:pointer">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:.5rem">
           <div class="ang-avatar" style="background:var(--orange-l);color:var(--orange-d)">${ini}</div>
-          <div><div style="font-size:13px;font-weight:600">${angNume(ang)}</div><div style="font-size:11px;color:var(--text3)">${ang.functie||'—'}${schimb?' · '+schimb.nume:''}</div></div>
+          <div>
+            <div style="font-size:13px;font-weight:600">${angNume(ang)}</div>
+            <div style="font-size:11px;color:var(--text3)">${ang.nr_matricol?`<span style="font-family:monospace">${ang.nr_matricol}</span> · `:''} ${ang.functie||'—'}${schimb?' · '+schimb.nume:''}</div>
+          </div>
         </div>
         ${isSarb?`<span class="badge badge-amber">Sărbătoare legală</span>`:
-          pont?`<span class="pont-tip-badge tip-${pont.tip}">${tipLabel(pont.tip)}</span>${pont.ora_intrare?`<div style="font-size:11px;color:var(--text3);margin-top:3px">${pont.ora_intrare.slice(0,5)} – ${(pont.ora_iesire||'').slice(0,5)}</div>`:pont.ore_lucrate?`<div style="font-size:11px;color:var(--text3);margin-top:3px">${pont.ore_lucrate}h</div>`:''}`:
+          pont?renderPontZiCard(pont):
           `<span class="badge badge-gray">Neînregistrat</span>`}
       </div>
     </div>`;
@@ -2693,9 +2722,45 @@ async function handlePontajImportFile(ev){
     else okCount+=batch.length;
   }
 
-  const negasiteMsg=negasite.size?`<br><small>⚠️ ${negasite.size} mărci negăsite în organigramă: ${[...negasite].slice(0,8).join(', ')}${negasite.size>8?'...':''}</small>`:'';
-  statusEl.innerHTML=`<div class="alert alert-success">Import pontaj finalizat: <b>${okCount}</b> intrări salvate${skipCount?`, <b>${skipCount}</b> erori`:''}${negasiteMsg}</div>`;
+  const errTxt=skipCount?', <b>'+skipCount+'</b> erori':'';
+  const negasiteMsg=negasite.size?'<br><small>⚠️ '+negasite.size+' mărci negăsite în organigramă: '+[...negasite].slice(0,8).join(', ')+(negasite.size>8?'...':'')+'</small>':'';
+  const exportBtn=negasite.size?'<button class="btn btn-sm btn-danger" onclick="exportNegasitePDF()" style="margin-top:8px">📄 Export PDF mărci negăsite ('+negasite.size+')</button>':'';
+  statusEl.innerHTML='<div class="alert alert-success">Import pontaj finalizat: <b>'+okCount+'</b> intrări salvate'+errTxt+negasiteMsg+'</div>'+exportBtn;
+  // Stocăm negăsiții global pentru export PDF ulterior
+  window._pontajNegasite=[...negasite];
   toast('Import pontaj finalizat','success');
+}
+
+function exportNegasitePDF(){
+  const lista=window._pontajNegasite||[];
+  if(!lista.length){toast('Nicio marcă negăsită','info');return;}
+  const printWin=window.open('','_blank');
+  printWin.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Mărci negăsite la import</title>
+  <style>
+    @page{size:A4 portrait;margin:15mm}
+    body{font-family:Arial,sans-serif;font-size:12px;color:#1a2744}
+    h1{font-size:16px;margin-bottom:6px}
+    .sub{font-size:11px;color:#6b7fa3;margin-bottom:16px}
+    table{width:100%;border-collapse:collapse}
+    th{background:#eef1f8;padding:7px 10px;text-align:left;font-weight:700;border-bottom:2px solid #d8dee8}
+    td{padding:6px 10px;border-bottom:1px solid #eef1f8}
+    tr:nth-child(even) td{background:#fafbfc}
+    .nota{margin-top:16px;font-size:11px;color:#6b7fa3;border-top:1px solid #eef1f8;padding-top:10px}
+  </style></head><body>
+    <h1>Mărci negăsite la import pontaj</h1>
+    <div class="sub">Generat: ${new Date().toLocaleString('ro-RO')} · Total: ${lista.length} persoane</div>
+    <table>
+      <thead><tr><th>#</th><th>Marcă</th><th>Nume (din fișier)</th></tr></thead>
+      <tbody>${lista.map((item,i)=>{
+        const [marca,...numeParts]=item.split(' (');
+        const nume=numeParts.join(' (').replace(/\)$/,'');
+        return `<tr><td>${i+1}</td><td style="font-family:monospace;font-weight:700">70000${marca.trim()}</td><td>${nume||'—'}</td></tr>`;
+      }).join('')}</tbody>
+    </table>
+    <div class="nota">⚠️ Persoanele de mai sus nu au fost găsite în organigramă (câmpul Nr. matricol). Verifică că marca din fișierul de pontaj corespunde cu nr. matricol înregistrat în aplicație (format: 70000 + Marcă).</div>
+    <script>window.onload=()=>setTimeout(()=>window.print(),200)<\/script>
+  </body></html>`);
+  printWin.document.close();
 }
 
 function exportProductiePDF(){
