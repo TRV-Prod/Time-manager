@@ -413,8 +413,8 @@ tr:hover td{background:var(--slate-ll)}
           <button class="btn btn-sm" onclick="navToday()">Azi</button>
         </div>
         <div class="pont-controls" id="pont-filters" style="display:none">
-          <select id="pont-sectie-sel" class="form-control" style="width:180px" onchange="renderPontaj()"><option value="">Toate secțiile</option></select>
-          <input id="pont-search" class="form-control" style="width:220px" placeholder="🔍 Caută angajat..." oninput="renderPontaj()"/>
+          <select id="pont-sectie-sel" class="form-control" style="width:180px" onchange="saveFilters('pont',{sectie:this.value});renderPontaj()"><option value="">Toate secțiile</option></select>
+          <input id="pont-search" class="form-control" style="width:220px" placeholder="🔍 Caută angajat..." oninput="saveFilters('pont',{search:this.value});renderPontaj()"/>
           <div id="pont-selection-bar" style="display:none;align-items:center;gap:8px;background:var(--orange-l);padding:5px 10px;border-radius:var(--r2);border:1px solid var(--orange)">
             <span id="pont-selection-count" style="font-size:12px;font-weight:600;color:var(--orange-d)">0 selectați</span>
             <button class="btn btn-sm btn-primary" onclick="openPontajGroupModal()">✏️ Editează grup</button>
@@ -550,20 +550,20 @@ tr:hover td{background:var(--slate-ll)}
           </div>
 
           <div class="pont-controls" style="margin-top:.75rem">
-            <select id="prod-mod-perioada" class="form-control" style="width:160px" onchange="renderProductieRaport()">
+            <select id="prod-mod-perioada" class="form-control" style="width:160px" onchange="saveFilters('prod',{mod:this.value});renderProductieRaport()">
               <option value="zi">O singură zi</option>
               <option value="interval">Interval de date</option>
             </select>
-            <input id="prod-data-start" class="form-control" type="date" style="width:150px" onchange="renderProductieRaport()"/>
+            <input id="prod-data-start" class="form-control" type="date" style="width:150px" onchange="saveFilters('prod',{dataStart:this.value});renderProductieRaport()"/>
             <span id="prod-data-end-wrap" style="display:none;align-items:center;gap:6px">
               <span style="color:var(--text3);font-size:13px">până la</span>
-              <input id="prod-data-end" class="form-control" type="date" style="width:150px" onchange="renderProductieRaport()"/>
+              <input id="prod-data-end" class="form-control" type="date" style="width:150px" onchange="saveFilters('prod',{dataEnd:this.value});renderProductieRaport()"/>
             </span>
           </div>
           <div class="pont-controls" style="margin-top:.5rem">
-            <select id="prod-angajat-sel" class="form-control admin-only" style="width:220px;display:none" onchange="renderProductieRaport()"><option value="">Toți angajații</option></select>
-            <select id="prod-sectie-sel" class="form-control admin-only" style="width:180px;display:none" onchange="prodOnSectieChange()"><option value="">Toate secțiile</option></select>
-            <select id="prod-workcenter-sel" class="form-control" style="width:220px" onchange="renderProductieRaport()"><option value="">Toate workcenter-urile</option></select>
+            <select id="prod-angajat-sel" class="form-control admin-only" style="width:220px;display:none" onchange="saveFilters('prod',{angajat:this.value});renderProductieRaport()"><option value="">Toți angajații</option></select>
+            <select id="prod-sectie-sel" class="form-control admin-only" style="width:180px;display:none" onchange="saveFilters('prod',{sectie:this.value});prodOnSectieChange()"><option value="">Toate secțiile</option></select>
+            <select id="prod-workcenter-sel" class="form-control" style="width:220px" onchange="saveFilters('prod',{workcenter:this.value});prodOnWorkcenterChange()"><option value="">Toate workcenter-urile</option></select>
           </div>
         </div>
 
@@ -1421,8 +1421,20 @@ function buildSidebarNav(){
   document.querySelectorAll('.admin-only').forEach(el=>el.style.display=isAd?'':'none');
   document.querySelectorAll('.dev-only').forEach(el=>el.style.display=isDv?'':'none');
 }
-const PAGE_TITLES={dashboard:'Tablou de bord',pontaj:'Pontaj',invoiri:'Cereri invoiri',angajati:'Angajați',calendar:'Calendar',utilizatori:'Utilizatori',productie:'Producție'};
-const PAGE_SUBS={dashboard:'Bun venit!',pontaj:'Vizualizare și editare pontaj',invoiri:'Cereri de invoire',angajati:'Structură organizatorică',calendar:'Schimburi și sărbători legale',utilizatori:'Conturi și drepturi de acces',productie:'Raport eficiență producție'};
+// ─── Persistență filtre (sessionStorage) ───
+const FILTERS_KEY='pontaj_filters';
+function saveFilters(prefix, vals){
+  const all=JSON.parse(sessionStorage.getItem(FILTERS_KEY)||'{}');
+  Object.assign(all,Object.fromEntries(Object.entries(vals).map(([k,v])=>[prefix+'_'+k,v])));
+  sessionStorage.setItem(FILTERS_KEY,JSON.stringify(all));
+}
+function loadFilter(prefix,key){
+  const all=JSON.parse(sessionStorage.getItem(FILTERS_KEY)||'{}');
+  return all[prefix+'_'+key]??null;
+}
+function setSelectValue(id,val){const el=document.getElementById(id);if(el&&val!=null)el.value=val;}
+function setInputValue(id,val){const el=document.getElementById(id);if(el&&val!=null)el.value=val;}
+
 function showPage(id){
   sessionStorage.setItem('pontaj_last_page',id);
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -1543,15 +1555,20 @@ function initPontaj(){
     filters.style.display='flex';
     const sectSel=document.getElementById('pont-sectie-sel');
     sectSel.innerHTML='<option value="">Toate secțiile</option>'+allSectii.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
-    document.getElementById('pont-search').value='';
-    selectedAngajatiIds.clear();
+    // Restaurăm filtrele salvate
+    setSelectValue('pont-sectie-sel',loadFilter('pont','sectie'));
+    setInputValue('pont-search',loadFilter('pont','search'));
   } else {
     filters.style.display='none';
   }
-  setZoom('luna');
+  const savedZoom=loadFilter('pont','zoom')||'luna';
+  pontajZoom=savedZoom;
+  document.querySelectorAll('.zoom-tab').forEach(t=>t.classList.toggle('active',t.dataset.zoom===savedZoom));
+  refreshPontaj();
 }
 function setZoom(z){
   pontajZoom=z;
+  saveFilters('pont',{zoom:z});
   document.querySelectorAll('.zoom-tab').forEach(t=>t.classList.toggle('active',t.dataset.zoom===z));
   refreshPontaj();
 }
@@ -1563,13 +1580,35 @@ function navPontaj(dir){
 }
 function navToday(){pontajDate=new Date();refreshPontaj();}
 
+function getSubordonatiIds(nodeId, result=new Set()){
+  // Colectează recursiv toți descendenții unui nod din organigramă
+  allOrgNodes.filter(n=>n.parent_id===nodeId).forEach(ch=>{
+    result.add(ch.id);
+    getSubordonatiIds(ch.id,result);
+  });
+  return result;
+}
+
 function getAngajatiFiltrati(){
-  let list=isAdmin()?allAngajati.filter(a=>a.activ):(currentProfile?.angajat_id?allAngajati.filter(a=>a.id===currentProfile.angajat_id):[]);
+  let list;
   if(isAdmin()){
+    // Admin vede doar angajații subordonați lui în organigramă + pe el însuși.
+    // Nu vede persoanele care îi sunt superioare ierarhic.
+    const myAngajat=allAngajati.find(a=>a.id===currentProfile?.angajat_id);
+    const myNode=myAngajat?allOrgNodes.find(n=>n.id===myAngajat.org_node_id):null;
+    if(myNode){
+      const subNodeIds=getSubordonatiIds(myNode.id);
+      list=allAngajati.filter(a=>a.activ&&(a.id===myAngajat.id||subNodeIds.has(a.org_node_id)));
+    } else {
+      // Dacă admin-ul nu are un nod în organigramă, vede toți (fallback sigur)
+      list=allAngajati.filter(a=>a.activ);
+    }
     const sectFilt=document.getElementById('pont-sectie-sel')?.value;
     const search=(document.getElementById('pont-search')?.value||'').toLowerCase().trim();
     if(sectFilt) list=list.filter(a=>a.sectie_id===sectFilt);
     if(search) list=list.filter(a=>angNume(a).toLowerCase().includes(search)||(a.functie||'').toLowerCase().includes(search));
+  } else {
+    list=currentProfile?.angajat_id?allAngajati.filter(a=>a.id===currentProfile.angajat_id):[];
   }
   return list;
 }
@@ -2517,28 +2556,40 @@ async function initProductie(){
     selAng.innerHTML='<option value="">Toți angajații</option>'+allAngajati.filter(a=>a.activ).map(a=>`<option value="${a.id}">${angNume(a)}</option>`).join('');
     const selSec=document.getElementById('prod-sectie-sel');
     selSec.innerHTML='<option value="">Toate secțiile</option>'+allSectii.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
+    // Restaurăm filtrele salvate
+    setSelectValue('prod-sectie-sel',loadFilter('prod','sectie'));
+    setSelectValue('prod-workcenter-sel',loadFilter('prod','workcenter'));
+    setSelectValue('prod-angajat-sel',loadFilter('prod','angajat'));
+    prodFiltreazaAngajati(); // actualizăm lista angajați în funcție de secție/wc restaurat
   }
-  populeazaWorkcenterSelect();
+  await populeazaWorkcenterSelect();
+  setSelectValue('prod-workcenter-sel',loadFilter('prod','workcenter'));
 
-  // Setează data inițială DOAR dacă nu a fost deja setată manual anterior în această sesiune
-  if(!document.getElementById('prod-data-start').value){
+  // Restaurăm modul de perioadă și datele
+  const savedMod=loadFilter('prod','mod');
+  const savedStart=loadFilter('prod','dataStart');
+  const savedEnd=loadFilter('prod','dataEnd');
+  if(savedMod) setSelectValue('prod-mod-perioada',savedMod);
+  // Setează data inițială DOAR dacă nu a fost deja salvată anterior
+  if(!savedStart){
     const today=fmtDateISO(new Date());
-    // Verificăm dacă există date pentru azi — dacă nu, luăm ultima zi cu date reale din DB
     let q=sb.from('productie_evenimente').select('transaction_dt').order('transaction_dt',{ascending:false}).limit(1);
     if(!isAd&&currentProfile?.angajat_id) q=q.eq('angajat_id',currentProfile.angajat_id);
     const {data:latest}=await q;
     const ultimaZi=latest?.[0]?.transaction_dt;
     if(ultimaZi&&ultimaZi!==today){
-      // Există date, dar nu pentru azi — setăm intervalul pe ultima lună cu date
-      document.getElementById('prod-mod-perioada').value='interval';
-      document.getElementById('prod-data-start').value=ultimaZi.slice(0,7)+'-01'; // prima zi a lunii respective
+      setSelectValue('prod-mod-perioada','interval');
+      document.getElementById('prod-data-start').value=ultimaZi.slice(0,7)+'-01';
       document.getElementById('prod-data-end').value=ultimaZi;
-      document.getElementById('prod-data-end-wrap').style.display='flex';
     } else {
       document.getElementById('prod-data-start').value=today;
-      document.getElementById('prod-data-end-wrap').style.display='none';
     }
+  } else {
+    document.getElementById('prod-data-start').value=savedStart;
+    if(savedEnd) document.getElementById('prod-data-end').value=savedEnd;
   }
+  const mod=document.getElementById('prod-mod-perioada').value;
+  document.getElementById('prod-data-end-wrap').style.display=mod==='interval'?'flex':'none';
   renderProductieRaport();
 }
 document.getElementById('prod-mod-perioada')?.addEventListener?.('change',function(){
@@ -2590,8 +2641,33 @@ function prodSetPerioadaRapida(tip){
   renderProductieRaport();
 }
 
+function prodFiltreazaAngajati(){
+  // Filtrează lista de angajați din selector în funcție de secție ȘI workcenter selectat
+  const sectSel=document.getElementById('prod-sectie-sel')?.value||'';
+  const wcSel=document.getElementById('prod-workcenter-sel')?.value||'';
+  const angSel=document.getElementById('prod-angajat-sel');
+  if(!angSel) return;
+  const currentAng=angSel.value;
+  let candidati=allAngajati.filter(a=>a.activ);
+  // Filtrare după secție
+  if(sectSel) candidati=candidati.filter(a=>a.sectie_id===sectSel);
+  // Filtrare după workcenter: păstrăm doar angajații care au cel puțin o înregistrare în acel workcenter
+  if(wcSel){
+    const angCuWc=new Set(allProductieEv.filter(e=>e.workcenter===wcSel).map(e=>e.angajat_id).filter(Boolean));
+    candidati=candidati.filter(a=>angCuWc.has(a.id));
+  }
+  angSel.innerHTML='<option value="">'+
+    (sectSel||wcSel?`Toți (${candidati.length} în filtru)`:'Toți angajații')+
+    '</option>'+candidati.map(a=>`<option value="${a.id}">${angNume(a)}</option>`).join('');
+  // Restaurăm selecția anterioară dacă angajatul e tot în lista filtrată
+  if(currentAng&&candidati.some(a=>a.id===currentAng)) angSel.value=currentAng;
+}
 function prodOnSectieChange(){
-  // Filtrăm și lista de angajați afișată în selector, după secția aleasă (doar pentru claritate vizuală)
+  prodFiltreazaAngajati();
+  renderProductieRaport();
+}
+function prodOnWorkcenterChange(){
+  prodFiltreazaAngajati();
   renderProductieRaport();
 }
 
@@ -2742,9 +2818,6 @@ function renderProductieChart(){
   const culNormat='#1a7a4a',culRaportat='#e8610a',culPontat='#5b4fcf';
 
   if(tip==='bara'){
-    // Bară orizontală stivuită: Timp Pontat = bara de referință (100%), cu Timp Normat și
-    // Timp Raportat afișate dedesubt ca bare proprii, ușor de comparat vizual ca lungime.
-    // Acest model arată clar "cât de mult din ziua de lucru a fost folosit eficient".
     prodChartInstance=new Chart(ctx,{
       type:'bar',
       data:{
@@ -2761,17 +2834,38 @@ function renderProductieChart(){
         responsive:true,maintainAspectRatio:false,
         plugins:{
           legend:{display:false},
-          tooltip:{callbacks:{label:c=>fmtMinutes(c.raw)}}
+          tooltip:{callbacks:{label:c=>fmtMinutes(c.raw)}},
+          datalabels:{
+            anchor:'end',align:'end',
+            formatter:v=>fmtMinutes(v),
+            font:{weight:'700',size:12},
+            color:'#1a2744',padding:4
+          }
         },
         scales:{
           x:{ticks:{callback:v=>fmtMinutes(v)},grid:{color:'#eef1f8'}},
           y:{grid:{display:false}}
         }
-      }
+      },
+      plugins:[{
+        id:'inlineLabels',
+        afterDatasetsDraw(chart){
+          const {ctx,data}=chart;
+          chart.getDatasetMeta(0).data.forEach((bar,i)=>{
+            const val=data.datasets[0].data[i];
+            if(!val) return;
+            ctx.save();
+            ctx.fillStyle='#fff';
+            ctx.font='bold 11px Arial';
+            ctx.textAlign='left';
+            ctx.textBaseline='middle';
+            ctx.fillText(fmtMinutes(val),bar.x+6,bar.y);
+            ctx.restore();
+          });
+        }
+      }]
     });
   } else if(tip==='pie'){
-    // Plăcintă: cele 3 valori ca proporții unele față de altele (nu parte-din-întreg strict,
-    // dar util pentru a vedea rapid ponderea relativă a fiecărui tip de timp)
     prodChartInstance=new Chart(ctx,{
       type:'doughnut',
       data:{
@@ -2788,7 +2882,32 @@ function renderProductieChart(){
           legend:{position:'bottom'},
           tooltip:{callbacks:{label:c=>c.label+': '+fmtMinutes(c.raw)}}
         }
-      }
+      },
+      plugins:[{
+        id:'pieLabels',
+        afterDatasetsDraw(chart){
+          const {ctx,data}=chart;
+          const total=data.datasets[0].data.reduce((s,v)=>s+v,0);
+          chart.getDatasetMeta(0).data.forEach((arc,i)=>{
+            const val=data.datasets[0].data[i];
+            if(!val) return;
+            const pct=((val/total)*100).toFixed(0)+'%';
+            const angle=arc.startAngle+(arc.endAngle-arc.startAngle)/2;
+            const r=(arc.outerRadius+arc.innerRadius)/2;
+            const x=arc.x+Math.cos(angle)*r;
+            const y=arc.y+Math.sin(angle)*r;
+            ctx.save();
+            ctx.fillStyle='#fff';
+            ctx.font='bold 11px Arial';
+            ctx.textAlign='center';
+            ctx.textBaseline='middle';
+            ctx.fillText(pct,x,y-6);
+            ctx.font='10px Arial';
+            ctx.fillText(fmtMinutes(val),x,y+7);
+            ctx.restore();
+          });
+        }
+      }]
     });
   } else if(tip==='linie'){
     const zile=Object.keys(perZi).sort();
@@ -2797,15 +2916,32 @@ function renderProductieChart(){
       data:{
         labels:zile.map(z=>fmtDate(z)),
         datasets:[
-          {label:'Timp pontat',data:zile.map(z=>perZi[z].pontat||0),borderColor:culPontat,backgroundColor:culPontat+'22',tension:.3,fill:true},
-          {label:'Timp raportat',data:zile.map(z=>perZi[z].raportat||0),borderColor:culRaportat,backgroundColor:culRaportat+'22',tension:.3,fill:true},
-          {label:'Timp normat',data:zile.map(z=>perZi[z].normat||0),borderColor:culNormat,backgroundColor:culNormat+'22',tension:.3,fill:true}
+          {label:'Timp pontat',data:zile.map(z=>perZi[z].pontat||0),borderColor:culPontat,backgroundColor:culPontat+'22',tension:.3,fill:true,pointRadius:4,pointHoverRadius:6},
+          {label:'Timp raportat',data:zile.map(z=>perZi[z].raportat||0),borderColor:culRaportat,backgroundColor:culRaportat+'22',tension:.3,fill:true,pointRadius:4,pointHoverRadius:6},
+          {label:'Timp normat',data:zile.map(z=>perZi[z].normat||0),borderColor:culNormat,backgroundColor:culNormat+'22',tension:.3,fill:true,pointRadius:4,pointHoverRadius:6}
         ]
       },
       options:{
         responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtMinutes(c.raw)}}},
-        scales:{y:{ticks:{callback:v=>fmtMinutes(v)},grid:{color:'#eef1f8'}},x:{grid:{display:false}}}
+        plugins:{
+          legend:{position:'bottom'},
+          tooltip:{
+            callbacks:{
+              label:c=>c.dataset.label+': '+fmtMinutes(c.raw),
+              afterBody(items){
+                const zi=Object.keys(perZi).sort()[items[0]?.dataIndex];
+                if(!zi) return [];
+                const d=perZi[zi];
+                const eff=d.raportat>0?((d.normat/d.raportat)*100).toFixed(0)+'%':'—';
+                return ['Eficiență: '+eff];
+              }
+            }
+          }
+        },
+        scales:{
+          y:{ticks:{callback:v=>fmtMinutes(v)},grid:{color:'#eef1f8'}},
+          x:{grid:{display:false}}
+        }
       }
     });
   }
