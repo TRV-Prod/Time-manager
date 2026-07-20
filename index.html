@@ -525,22 +525,7 @@ tr:hover td{background:var(--slate-ll)}
               <span style="font-size:14px;font-weight:700;color:var(--red)">Zonă pericol — Ștergere date (doar Developer)</span>
             </div>
             <div style="font-size:12px;color:var(--text3);margin-bottom:1rem">Fiecare buton șterge <b>ireversibil</b> toate datele din tabela respectivă. Structura tabelelor rămâne intactă.</div>
-            <div style="display:flex;flex-wrap:wrap;gap:8px">
-              ${[
-                ['productie_evenimente','Scanări producție'],
-                ['pontaj','Pontaj'],
-                ['cereri','Cereri (invoiri/CO)'],
-                ['angajati','Angajați'],
-                ['org_nodes','Organigramă (noduri)'],
-                ['sectii','Secții'],
-                ['schimburi','Schimburi'],
-                ['sarbatori_legale','Sărbători legale'],
-              ].map(([tbl,label])=>`
-                <button class="btn btn-sm btn-danger" onclick="stergeTabela('${tbl}','${label}')"
-                  style="background:var(--red-l);color:var(--red);border-color:var(--red)">
-                  🗑️ ${label}
-                </button>`).join('')}
-            </div>
+            <div id="dev-delete-buttons" style="display:flex;flex-wrap:wrap;gap:8px"></div>
             <div id="dev-delete-status" style="margin-top:.75rem"></div>
           </div>
         </div>
@@ -3289,6 +3274,28 @@ function renderUtilizatori(){
   if(search) users=users.filter(u=>(u.full_name+' '+u.username).toLowerCase().includes(search));
   const rBadge={developer:'badge-purple',admin:'badge-orange',user:'badge-navy'};
   const rLabel={developer:'Developer',admin:'Admin',user:'Utilizator'};
+
+  // Generează butoanele de ștergere per tabelă (doar pentru developer)
+  const devBtns=document.getElementById('dev-delete-buttons');
+  if(devBtns&&isDev()){
+    const tabele=[
+      ['productie_evenimente','Scanări producție'],
+      ['pontaj','Pontaj'],
+      ['cereri','Cereri (invoiri/CO)'],
+      ['angajati','Angajați'],
+      ['org_nodes','Organigramă (noduri)'],
+      ['sectii','Secții'],
+      ['schimburi','Schimburi'],
+      ['sarbatori_legale','Sărbători legale'],
+    ];
+    devBtns.innerHTML=tabele.map(([tbl,label])=>
+      `<button class="btn btn-sm" onclick="stergeTabela('${tbl}','${label}')"
+        style="background:var(--red-l);color:var(--red);border:1px solid var(--red)">
+        🗑️ ${label}
+      </button>`
+    ).join('');
+  }
+
   // Banner info pentru contul curent dacă e user
   const selfBanner=document.getElementById('util-self-banner');
   if(selfBanner){
