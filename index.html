@@ -536,8 +536,12 @@ tr:hover td{background:var(--slate-ll)}
         <div class="card" style="margin-bottom:1rem">
           <div class="card-title" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
             <span style="display:flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Raport eficiență</span>
-            <button class="btn btn-sm admin-only" style="display:none" onclick="document.getElementById('prod-import-file').click()" title="Import raport Start/Stop din Excel"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import Excel</button>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-sm" onclick="exportProductiePDF()" title="Exportă raportul curent în PDF"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Export PDF</button>
+              <button class="btn btn-sm admin-only" style="display:none" onclick="document.getElementById('prod-import-file').click()" title="Import raport Start/Stop din Excel"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import Producție</button>
+              <button class="btn btn-sm dev-only" style="display:none" onclick="document.getElementById('pont-import-xlsx-file').click()" title="Import pontaje lunare din Excel (Marca → 70000+Marca)"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import Pontaj XLSX</button>
             <input type="file" id="prod-import-file" accept=".xlsx,.xls" style="display:none" onchange="handleProductieImportFile(event)"/>
+            <input type="file" id="pont-import-xlsx-file" accept=".xlsx,.xls" style="display:none" onchange="handlePontajImportFile(event)"/>
           </div>
           <div id="prod-import-status" style="display:none;margin-top:.5rem"></div>
 
@@ -561,7 +565,7 @@ tr:hover td{background:var(--slate-ll)}
             </span>
           </div>
           <div class="pont-controls" style="margin-top:.5rem">
-            <select id="prod-angajat-sel" class="form-control admin-only" style="width:220px;display:none" onchange="saveFilters('prod',{angajat:this.value});renderProductieRaport()"><option value="">Toți angajații</option></select>
+            <select id="prod-angajat-sel" class="form-control admin-only" style="width:220px;display:none" onchange="saveFilters('prod',{angajat:this.value});prodOnAngajatChange()"><option value="">Toți angajații</option></select>
             <select id="prod-sectie-sel" class="form-control admin-only" style="width:180px;display:none" onchange="saveFilters('prod',{sectie:this.value});prodOnSectieChange()"><option value="">Toate secțiile</option></select>
             <select id="prod-workcenter-sel" class="form-control" style="width:220px" onchange="saveFilters('prod',{workcenter:this.value});prodOnWorkcenterChange()"><option value="">Toate workcenter-urile</option></select>
           </div>
@@ -2551,6 +2555,145 @@ async function handleProductieImportFile(ev){
   if(document.getElementById('page-productie').classList.contains('active')) renderProductieRaport();
 }
 
+// ── Import Pontaj lunar din xlsx (Marca → 70000+Marca) ──
+async function handlePontajImportFile(ev){
+  const file=ev.target.files[0];if(!file)return;ev.target.value='';
+  const statusEl=document.getElementById('prod-import-status');
+  statusEl.style.display='block';statusEl.innerHTML='<div class="alert alert-info">Se citește fișierul de pontaj...</div>';
+
+  let waited=0;
+  while(typeof XLSX==='undefined'&&waited<5000){await new Promise(r=>setTimeout(r,250));waited+=250;}
+  if(typeof XLSX==='undefined'){statusEl.innerHTML='<div class="alert alert-danger">Librăria Excel nu s-a încărcat. Reîncarcă pagina.</div>';return;}
+
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array',cellDates:true});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+  if(rows.length<3){statusEl.innerHTML='<div class="alert alert-danger">Fișier invalid.</div>';return;}
+
+  // Rândul 2 conține numerele zilelor (1,2,3,...31) începând de la coloana C (index 2)
+  const ziRow=rows[1];
+  const lastCol=ziRow.length;
+  // Detectăm luna și anul din numele fișierului sau din primul nr de zi care e 1
+  // (presupunem că dev-ul știe luna; importăm dupa datele ce le vom construi)
+  // Cerem luna/anul printr-un prompt simplu
+  const lunaAnInput=prompt('Introdu luna și anul pontajului (format MM/YYYY, ex: 05/2026):')||'';
+  const [lunaMM,AAAA]=lunaAnInput.split('/');
+  if(!lunaMM||!AAAA||isNaN(parseInt(lunaMM))||isNaN(parseInt(AAAA))){
+    statusEl.innerHTML='<div class="alert alert-danger">Lună/an invalid.</div>';return;
+  }
+
+  // Construim un map Marca (string) → angajat_id din allAngajati
+  const mapMarca={};
+  allAngajati.forEach(a=>{if(a.nr_matricol)mapMarca[String(a.nr_matricol).trim()]=a.id;});
+
+  let okCount=0,skipCount=0,errCount=0;
+  const records=[];
+  for(let i=2;i<rows.length;i++){
+    const row=rows[i];
+    if(!row||row[0]==null) continue;
+    const marca=String(row[0]).trim();
+    if(!marca||marca==='0') continue;
+    const employeeNo='70000'+marca; // ex: 70000428
+    const angajatId=mapMarca[employeeNo]||mapMarca[marca]||null;
+
+    // Procesăm fiecare zi (coloanele 2..n)
+    for(let c=2;c<lastCol;c++){
+      const zi=ziRow[c];if(!zi||typeof zi!=='number'||zi<1||zi>31) continue;
+      const val=row[c];
+      if(!val||val==='-'||val==='') continue; // zi nelucrată sau weekend
+      // Valori posibile: număr de ore (8, 17...), 'Sl' (sărbătoare legală), 'Co', 'Cm' etc.
+      let tip='P',oreLucrate=null;
+      if(typeof val==='string'){
+        const v=val.toUpperCase();
+        if(v==='SL') tip='SL';
+        else if(v.startsWith('CO')) tip='CO';
+        else if(v.startsWith('CM')) tip='CM';
+        else if(v.startsWith('INV')) tip='INV';
+        else if(v==='CFP') tip='CFP';
+        else if(v==='AB') tip='AB';
+        else oreLucrate=parseFloat(val)||null; // cifre ca string
+      } else if(typeof val==='number') oreLucrate=val;
+      if(tip!=='P') oreLucrate=null;
+
+      let dataStr;
+      try{
+        dataStr=`${AAAA}-${String(parseInt(lunaMM)).padStart(2,'0')}-${String(zi).padStart(2,'0')}`;
+        new Date(dataStr); // validare
+      }catch{skipCount++;continue;}
+
+      records.push({angajat_id:angajatId,data:dataStr,tip,ore_lucrate:oreLucrate,
+        observatii:angajatId?null:`Nr matricol negăsit: ${marca} (${employeeNo})`,
+        created_by:currentProfile.id,updated_at:new Date().toISOString()});
+    }
+  }
+
+  if(!records.length){statusEl.innerHTML='<div class="alert alert-danger">Nicio zi lucrată găsită în fișier.</div>';return;}
+
+  // Upsert pe (angajat_id, data) — dacă există deja pontaj pentru acea zi, îl actualizăm
+  statusEl.innerHTML=`<div class="alert alert-info">Se salvează ${records.length} intrări de pontaj...</div>`;
+  const batchSize=200;
+  for(let i=0;i<records.length;i+=batchSize){
+    const batch=records.slice(i,i+batchSize);
+    // Ștergem mai întâi rândurile existente pentru aceleași (angajat_id, data), ca să facem upsert manual
+    const pairs=[...new Set(batch.filter(r=>r.angajat_id).map(r=>r.angajat_id+'|'+r.data))];
+    for(const pair of pairs){
+      const [aId,d]=pair.split('|');
+      await sb.from('pontaj').delete().eq('angajat_id',aId).eq('data',d);
+    }
+    const {error}=await sb.from('pontaj').insert(batch.filter(r=>r.angajat_id));
+    if(error){errCount+=batch.filter(r=>r.angajat_id).length;console.error(error);}
+    else okCount+=batch.filter(r=>r.angajat_id).length;
+    skipCount+=batch.filter(r=>!r.angajat_id).length;
+  }
+  statusEl.innerHTML=`<div class="alert alert-success">Import pontaj finalizat: <b>${okCount}</b> intrări salvate${skipCount?`, <b>${skipCount}</b> ignorate (marcă negăsită în organigramă)`:''}${errCount?`, <b>${errCount}</b> erori`:''}.</div>`;
+  toast('Import pontaj finalizat','success');
+}
+
+function exportProductiePDF(){
+  const angSel=document.getElementById('prod-angajat-sel')?.value||'';
+  const angajat=allAngajati.find(a=>a.id===angSel)||(!isAdmin()?allAngajati.find(a=>a.id===currentProfile?.angajat_id):null);
+  const titlu=angajat
+    ?`Raport de monitorizare a eficienței pentru ${angNume(angajat)}`
+    :'Raport de monitorizare a eficienței';
+  const dataStart=document.getElementById('prod-data-start').value;
+  const dataEnd=document.getElementById('prod-data-end').value||dataStart;
+  const perioadaTxt=dataStart===dataEnd?fmtDate(dataStart):`${fmtDate(dataStart)} – ${fmtDate(dataEnd)}`;
+
+  const rezumat=document.getElementById('prod-rezumat')?.innerHTML||'';
+  const summary=document.getElementById('prod-summary')?.innerHTML||'';
+  const tbody=document.getElementById('prod-tbody')?.innerHTML||'';
+  const theadRow=document.querySelector('#page-productie thead tr')?.innerHTML||'';
+
+  const printWin=window.open('','_blank');
+  printWin.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titlu}</title>
+  <style>
+    @page{size:A4 portrait;margin:12mm}
+    *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+    body{padding:0;font-size:12px;color:#1a2744}
+    h1{font-size:16px;font-weight:700;margin-bottom:4px}
+    .sub{font-size:11px;color:#6b7fa3;margin-bottom:14px}
+    .rezumat{background:#eef1f8;border-radius:6px;padding:10px 12px;font-size:13px;font-weight:500;line-height:1.6;margin-bottom:14px}
+    .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px}
+    .stat{background:#f8f9fc;border:1px solid #d8dee8;border-radius:6px;padding:8px 10px}
+    .stat-val{font-size:14px;font-weight:700;color:#1a2744;margin-top:4px}
+    .stat-lbl{font-size:9px;color:#6b7fa3;text-transform:uppercase;letter-spacing:.04em}
+    table{width:100%;border-collapse:collapse;font-size:10px}
+    th{background:#eef1f8;color:#1a2744;font-weight:700;text-align:left;padding:5px 7px;border-bottom:2px solid #d8dee8}
+    td{padding:4px 7px;border-bottom:1px solid #eef1f8}
+    tr:nth-child(even) td{background:#fafbfc}
+    .admin-only{display:none}
+  </style></head><body>
+    <h1>${titlu}</h1>
+    <div class="sub">Perioada: ${perioadaTxt} · Generat: ${new Date().toLocaleString('ro-RO')}</div>
+    <div class="rezumat">${rezumat.replace(/<[^>]+style="[^"]*display:none[^"]*"[^>]*>.*?<\/[^>]+>/gs,'')}</div>
+    <div class="grid">${summary}</div>
+    <table><thead><tr>${theadRow}</tr></thead><tbody>${tbody}</tbody></table>
+    <script>window.onload=()=>setTimeout(()=>window.print(),200)<\/script>
+  </body></html>`);
+  printWin.document.close();
+}
+
 async function initProductie(){
   const isAd=isAdmin();
   document.querySelectorAll('#page-productie .admin-only').forEach(el=>el.style.display=isAd?'':'none');
@@ -2599,19 +2742,111 @@ document.getElementById('prod-mod-perioada')?.addEventListener?.('change',functi
   document.getElementById('prod-data-end-wrap').style.display=this.value==='interval'?'flex':'none';
 });
 
+// ─── Filtrare dinamică bidirectională: secție ↔ angajat ↔ workcenter ───
+// allProductieEv conține datele din perioada curentă, deja încărcate din DB.
+// Toți cei 3 selectori se actualizează unii pe alții fără să se blocheze reciproc.
+
+function prodGetAngajatiEv(){
+  // Angajații care apar în evenimentele din perioada curentă (pentru filtrare după WC/secție)
+  const ids=new Set(allProductieEv.map(e=>e.angajat_id).filter(Boolean));
+  return allAngajati.filter(a=>a.activ&&ids.has(a.id));
+}
+
+function prodActualizeazaSelectori(sursa){
+  // sursa = 'angajat'|'sectie'|'workcenter' — cel care tocmai s-a schimbat, nu îl resetăm pe el
+  const angSel=document.getElementById('prod-angajat-sel');
+  const sectSel=document.getElementById('prod-sectie-sel');
+  const wcSel=document.getElementById('prod-workcenter-sel');
+  if(!angSel||!sectSel||!wcSel) return;
+
+  const angVal=angSel.value;
+  const sectVal=sectSel.value;
+  const wcVal=wcSel.value;
+
+  // Calculăm setul de evenimente relevante în funcție de fiecare filtru aplicat
+  const evDupaSect=sectVal
+    ?allProductieEv.filter(e=>e.angajat_id&&allAngajati.find(a=>a.id===e.angajat_id&&a.sectie_id===sectVal))
+    :allProductieEv;
+  const evDupaWc=wcVal?allProductieEv.filter(e=>e.workcenter===wcVal):allProductieEv;
+  const evDupaAng=angVal?allProductieEv.filter(e=>e.angajat_id===angVal):allProductieEv;
+
+  // 1. Actualizăm selector Angajat (dacă nu el e sursa)
+  if(sursa!=='angajat'){
+    // Angajații valizi = cei care apar în evenimentele filtrate după secție ȘI workcenter
+    const evFiltrate=sectVal&&wcVal
+      ?allProductieEv.filter(e=>e.workcenter===wcVal&&allAngajati.find(a=>a.id===e.angajat_id&&a.sectie_id===sectVal))
+      :sectVal?evDupaSect:wcVal?evDupaWc:allProductieEv;
+    const angIds=new Set(evFiltrate.map(e=>e.angajat_id).filter(Boolean));
+    const candidatiAng=allAngajati.filter(a=>a.activ&&angIds.has(a.id));
+    angSel.innerHTML='<option value="">'+(sectVal||wcVal?`Toți (${candidatiAng.length})`:'Toți angajații')+'</option>'+
+      candidatiAng.map(a=>`<option value="${a.id}">${angNume(a)}</option>`).join('');
+    if(angVal&&candidatiAng.some(a=>a.id===angVal)) angSel.value=angVal;
+  }
+
+  // 2. Actualizăm selector Secție (dacă nu ea e sursa)
+  if(sursa!=='sectie'){
+    // Secțiile valide = cele care apar la angajații din evenimentele filtrate după angajat ȘI workcenter
+    const evFiltrate=angVal&&wcVal
+      ?allProductieEv.filter(e=>e.angajat_id===angVal&&e.workcenter===wcVal)
+      :angVal?evDupaAng:wcVal?evDupaWc:allProductieEv;
+    const angIdsRel=new Set(evFiltrate.map(e=>e.angajat_id).filter(Boolean));
+    const sectIds=new Set(allAngajati.filter(a=>angIdsRel.has(a.id)&&a.sectie_id).map(a=>a.sectie_id));
+    const candidatiSect=allSectii.filter(s=>sectIds.has(s.id));
+    sectSel.innerHTML='<option value="">Toate secțiile</option>'+
+      candidatiSect.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
+    if(sectVal&&candidatiSect.some(s=>s.id===sectVal)) sectSel.value=sectVal;
+  }
+
+  // 3. Actualizăm selector Workcenter (dacă nu el e sursa)
+  if(sursa!=='workcenter'){
+    // Workcenterele valide = cele care apar în evenimentele filtrate după angajat ȘI secție
+    const evFiltrate=angVal&&sectVal
+      ?allProductieEv.filter(e=>e.angajat_id===angVal&&allAngajati.find(a=>a.id===e.angajat_id&&a.sectie_id===sectVal))
+      :angVal?evDupaAng:sectVal?evDupaSect:allProductieEv;
+    const seen=new Set();const opts=[];
+    evFiltrate.forEach(e=>{
+      const key=e.workcenter;
+      if(key&&!seen.has(key)){seen.add(key);opts.push({val:key,label:e.workcenter_name||key});}
+    });
+    opts.sort((a,b)=>a.label.localeCompare(b.label));
+    wcSel.innerHTML='<option value="">Toate workcenter-urile</option>'+
+      opts.map(o=>`<option value="${o.val}">${o.label}</option>`).join('');
+    if(wcVal&&opts.some(o=>o.val===wcVal)) wcSel.value=wcVal;
+  }
+}
+
 async function populeazaWorkcenterSelect(){
-  const {data}=await sb.from('productie_evenimente').select('workcenter,workcenter_name').not('workcenter_name','is',null);
+  // La inițializare, populăm WC cu TOATE valorile din perioada curentă (fără niciun filtru)
   const seen=new Set();const opts=[];
-  (data||[]).forEach(r=>{
-    const key=r.workcenter_name||r.workcenter;
-    if(key&&!seen.has(key)){seen.add(key);opts.push({val:r.workcenter,label:r.workcenter_name||r.workcenter});}
+  allProductieEv.forEach(e=>{
+    const key=e.workcenter;
+    if(key&&!seen.has(key)){seen.add(key);opts.push({val:key,label:e.workcenter_name||key});}
   });
   opts.sort((a,b)=>a.label.localeCompare(b.label));
   const sel=document.getElementById('prod-workcenter-sel');
-  const current=sel.value;
-  sel.innerHTML='<option value="">Toate workcenter-urile</option>'+opts.map(o=>`<option value="${o.val}">${o.label}</option>`).join('');
-  sel.value=current;
+  const current=sel?.value||'';
+  if(sel){
+    sel.innerHTML='<option value="">Toate workcenter-urile</option>'+opts.map(o=>`<option value="${o.val}">${o.label}</option>`).join('');
+    if(current&&opts.some(o=>o.val===current)) sel.value=current;
+  }
 }
+
+function prodOnAngajatChange(){
+  saveFilters('prod',{angajat:document.getElementById('prod-angajat-sel').value});
+  prodActualizeazaSelectori('angajat');
+  renderProductieRaport();
+}
+function prodOnSectieChange(){
+  saveFilters('prod',{sectie:document.getElementById('prod-sectie-sel').value});
+  prodActualizeazaSelectori('sectie');
+  renderProductieRaport();
+}
+function prodOnWorkcenterChange(){
+  saveFilters('prod',{workcenter:document.getElementById('prod-workcenter-sel').value});
+  prodActualizeazaSelectori('workcenter');
+  renderProductieRaport();
+}
+function prodFiltreazaAngajati(){prodActualizeazaSelectori('none');}
 
 // Butoane rapide de perioadă
 function prodSetPerioadaRapida(tip){
@@ -2620,10 +2855,8 @@ function prodSetPerioadaRapida(tip){
   const start=document.getElementById('prod-data-start');
   const end=document.getElementById('prod-data-end');
   if(tip==='azi'){
-    modSel.value='zi';
-    start.value=fmtDateISO(today);
+    modSel.value='zi';start.value=fmtDateISO(today);
   } else if(tip==='ultima_zi'){
-    // ultima zi în care există efectiv date raportate (nu neapărat azi, ex. dacă azi nu s-a lucrat încă)
     modSel.value='zi';
     const ultima=allProductieEv.length?allProductieEv.reduce((m,r)=>r.transaction_dt>m?r.transaction_dt:m,allProductieEv[0].transaction_dt):fmtDateISO(today);
     start.value=ultima;
@@ -2640,39 +2873,11 @@ function prodSetPerioadaRapida(tip){
     const d=new Date(today);d.setFullYear(d.getFullYear()-1);
     start.value=fmtDateISO(d);end.value=fmtDateISO(today);
   }
+  saveFilters('prod',{mod:modSel.value,dataStart:start.value,dataEnd:end.value||''});
   document.getElementById('prod-data-end-wrap').style.display=modSel.value==='interval'?'flex':'none';
   renderProductieRaport();
 }
 
-function prodFiltreazaAngajati(){
-  // Filtrează lista de angajați din selector în funcție de secție ȘI workcenter selectat
-  const sectSel=document.getElementById('prod-sectie-sel')?.value||'';
-  const wcSel=document.getElementById('prod-workcenter-sel')?.value||'';
-  const angSel=document.getElementById('prod-angajat-sel');
-  if(!angSel) return;
-  const currentAng=angSel.value;
-  let candidati=allAngajati.filter(a=>a.activ);
-  // Filtrare după secție
-  if(sectSel) candidati=candidati.filter(a=>a.sectie_id===sectSel);
-  // Filtrare după workcenter: păstrăm doar angajații care au cel puțin o înregistrare în acel workcenter
-  if(wcSel){
-    const angCuWc=new Set(allProductieEv.filter(e=>e.workcenter===wcSel).map(e=>e.angajat_id).filter(Boolean));
-    candidati=candidati.filter(a=>angCuWc.has(a.id));
-  }
-  angSel.innerHTML='<option value="">'+
-    (sectSel||wcSel?`Toți (${candidati.length} în filtru)`:'Toți angajații')+
-    '</option>'+candidati.map(a=>`<option value="${a.id}">${angNume(a)}</option>`).join('');
-  // Restaurăm selecția anterioară dacă angajatul e tot în lista filtrată
-  if(currentAng&&candidati.some(a=>a.id===currentAng)) angSel.value=currentAng;
-}
-function prodOnSectieChange(){
-  prodFiltreazaAngajati();
-  renderProductieRaport();
-}
-function prodOnWorkcenterChange(){
-  prodFiltreazaAngajati();
-  renderProductieRaport();
-}
 
 async function renderProductieRaport(){
   const mod=document.getElementById('prod-mod-perioada').value;
@@ -2702,6 +2907,9 @@ async function renderProductieRaport(){
   const {data,error}=await q.order('transaction_dt',{ascending:false});
   if(error){toast('Eroare la încărcarea raportului: '+error.message,'error');return;}
   allProductieEv=data||[];
+  // Actualizăm toți cei 3 selectori pe baza datelor noi (fără să resetăm cel care a declanșat)
+  populeazaWorkcenterSelect();
+  if(isAdmin()) prodActualizeazaSelectori('none');
 
   // Timp pontat (din tabela pontaj) pentru aceeași perioadă/angajat(i), folosit în rezumat,
   // statistici și grafic. Agregăm și total, și pe zile (pentru graficul de evoluție).
@@ -2785,11 +2993,7 @@ function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataStart,dat
     const nume=angNume(angajatFiltrat);
     const effTxt=eficientaTotal.toFixed(2).replace('.',',');
     const effColor=eficientaTotal>=90?'var(--green)':eficientaTotal>=70?'var(--amber)':'var(--red)';
-    rezumatEl.innerHTML=`<div class="alert" style="background:var(--navy-ll);border:1px solid var(--border);color:var(--navy);font-size:14px;line-height:1.6">
-      Pentru cele <b>${totalQty}</b> piese raportate de tine, <b>${nume}</b>, ai raportat un timp de <b>${fmtMinutes(totalRaportat)}</b>.
-      Aceleași piese trebuiau realizate în <b>${fmtMinutes(totalNormat)}</b> conform structurilor.
-      Eficiența este de <b style="color:${effColor}">${effTxt}%</b>!
-    </div>`;
+    rezumatEl.innerHTML=`<div style="background:var(--navy-ll);border:1px solid var(--border);border-radius:var(--r2);padding:.9rem 1.1rem;font-size:14.5px;font-weight:500;color:var(--navy);line-height:1.7">Pentru cele <b>${totalQty}</b> piese raportate de <b>${nume}</b>, a fost raportat un timp de <b>${fmtMinutes(totalRaportat)}</b>. Aceleași piese trebuiau realizate în <b>${fmtMinutes(totalNormat)}</b> conform structurilor. Eficiența este de <b style="color:${effColor};font-size:16px">${effTxt}%</b>!</div>`;
     rezumatEl.style.display='block';
   } else {
     rezumatEl.innerHTML='';rezumatEl.style.display='none';
