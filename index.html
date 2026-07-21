@@ -2648,7 +2648,7 @@ async function handlePontajImportFile(ev){
     const lunaPad=String(luna).padStart(2,'0');
 
     const marca=String(row[iMarca]).trim();
-    const employeeNo='70000'+marca;
+    const employeeNo='7'+String(parseInt(marca)).padStart(7,'0'); // mereu 8 cifre: 7 + marca cu zerouri
     const angajatId=mapNrMat[employeeNo]||mapNrMat[marca]||null;
     if(!angajatId) negasite.add(`${marca} (${row[iNume]||''})`);
 
@@ -2755,7 +2755,7 @@ function exportNegasitePDF(){
       <tbody>${lista.map((item,i)=>{
         const [marca,...numeParts]=item.split(' (');
         const nume=numeParts.join(' (').replace(/\)$/,'');
-        return `<tr><td>${i+1}</td><td style="font-family:monospace;font-weight:700">70000${marca.trim()}</td><td>${nume||'—'}</td></tr>`;
+        return `<tr><td>${i+1}</td><td style="font-family:monospace;font-weight:700">${'7'+String(parseInt(marca.trim())).padStart(7,'0')}</td><td>${nume||'—'}</td></tr>`;
       }).join('')}</tbody>
     </table>
     <div class="nota">⚠️ Persoanele de mai sus nu au fost găsite în organigramă (câmpul Nr. matricol). Verifică că marca din fișierul de pontaj corespunde cu nr. matricol înregistrat în aplicație (format: 70000 + Marcă).</div>
@@ -3247,11 +3247,13 @@ function renderProductieChart(){
             const val=ds.data[i];
             if(!val) return;
             ctx.save();
+            ctx.translate(pt.x, pt.y-8);
+            ctx.rotate(-Math.PI/2); // rotație 90° — text vertical, citit de jos în sus
             ctx.fillStyle=ds.borderColor;
             ctx.font='bold 10px Arial';
-            ctx.textAlign='center';
-            ctx.textBaseline='bottom';
-            ctx.fillText(fmtMinutes(val),pt.x,pt.y-6);
+            ctx.textAlign='left';
+            ctx.textBaseline='middle';
+            ctx.fillText(fmtMinutes(val),0,0);
             ctx.restore();
           });
         });
