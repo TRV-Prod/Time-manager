@@ -2587,8 +2587,8 @@ async function handleProductieImportFile(ev){
 
 // ── Import Pontaj lunar din xlsx (format Pontaj_general.xlsx) ──
 // Structură: Row 1 = goală, Row 2 = header, Row 3+ = date
-// Coloane: Luna(MM.YYYY), Dep., LOC, Departament, Nume, Marca, functie, cod, CAT NO, Masina, 1..31, total...
-// Marca → employee_no = "70000" + Marca, căutat în angajati.nr_matricol
+// Coloane: Luna(MM.YYYY ca float), Dep., LOC, Departament, Nume, Marca, functie, cod, CAT NO, Masina, 1..31, total...
+// Marca → employee_no = 8 cifre: '7' + padStart(7,'0')
 async function handlePontajImportFile(ev){
   const file=ev.target.files[0];if(!file)return;ev.target.value='';
   const statusEl=document.getElementById('prod-import-status');
@@ -2603,132 +2603,166 @@ async function handlePontajImportFile(ev){
   }
 
   const buf=await file.arrayBuffer();
-  const wb=XLSX.read(buf,{type:'array',cellDates:false});
+  const wb=XLSX.read(buf,{type:'array',cellDates:false,raw:false});
   const ws=wb.Sheets[wb.SheetNames[0]];
-  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
 
   // Header pe rândul 2 (index 1)
-  const header=rows[1]||[];
+  const header=(rows[1]||[]).map(h=>String(h||'').trim());
   const iLuna=header.indexOf('Luna');
   const iMarca=header.indexOf('Marca');
   const iNume=header.indexOf('Nume');
-  const iDep=header.indexOf('Departament');
-  // Zilele 1-31 sunt coloanele cu header '1'..'31'
-  const ziCols=[];
-  for(let z=1;z<=31;z++){
-    const idx=header.indexOf(String(z));
-    ziCols.push({zi:z,col:idx});
-  }
 
   if(iMarca<0||iLuna<0){
-    statusEl.innerHTML=`<div class="alert alert-danger">Nu am găsit coloanele esențiale (Luna, Marca) în fișier.<br><small>Header detectat: ${header.slice(0,12).join(', ')}</small></div>`;
+    statusEl.innerHTML='<div class="alert alert-danger">Nu am găsit coloanele Luna/Marca.<br><small>Header: '+header.slice(0,12).join(', ')+'</small></div>';
     return;
   }
 
-  // Map: nr_matricol (ex: "70000205") → angajat_id
+  // Coloanele zilelor 1..31 — căutăm în header String(z)
+  const ziCols=[];
+  for(let z=1;z<=31;z++){
+    const idx=header.indexOf(String(z));
+    if(idx>=0) ziCols.push({zi:z,col:idx});
+  }
+
+  // Mapă: nr_matricol → angajat_id
   const mapNrMat={};
   allAngajati.forEach(a=>{if(a.nr_matricol) mapNrMat[String(a.nr_matricol).trim()]=a.id;});
 
-  let totalRanduri=0,okCount=0,skipCount=0;
-  const records=[];
+  // Funcție de clasificare a valorii dintr-o celulă de zi
+  // Returnează {tip, ore} sau null dacă ziua e nelucrată/ignorată
+  function clasificaVal(val){
+    if(val===''||val===null||val===undefined) return null;
+    // Valoare numerică > 0 = ore prezent
+    if(typeof val==='number'){
+      if(val<=0) return null;
+      return {tip:'P',ore:val};
+    }
+    const v=String(val).trim().toUpperCase();
+    if(!v||v==='0') return null;
+    // Tip numeric scris ca string
+    const nr=parseFloat(v);
+    if(!isNaN(nr)&&nr>0) return {tip:'P',ore:nr};
+    // Coduri cunoscute (case-insensitive, deja uppercase)
+    if(v==='CO'||v==='C') return {tip:'CO',ore:null};
+    if(v==='CM'||v==='M') return {tip:'CM',ore:null};
+    if(v==='CFP') return {tip:'CFP',ore:null};
+    if(v==='AB'||v==='A') return {tip:'AB',ore:null};
+    if(v==='INV'||v==='I'||v==='IP') return {tip:'INV',ore:null};
+    if(v==='D') return {tip:'CO',ore:null}; // delegatie - tratata ca CO
+    if(v==='BO'||v==='B') return {tip:'CM',ore:null}; // boala = concediu medical
+    if(v==='TM') return {tip:'P',ore:null}; // timp de munca = prezent
+    if(v==='SL'||v==='SP') return {tip:'P',ore:null}; // sarbatoare legala/SPL = prezent
+    // Orice altceva necunoscut — log și ignorăm
+    return null;
+  }
+
+  // Parsăm luna din valoarea float Excel: 1.2026 → luna=1, an=2026
+  function parseazaLuna(raw){
+    if(!raw) return null;
+    const s=String(raw).trim();
+    const parts=s.split('.');
+    if(parts.length<2) return null;
+    const luna=parseInt(parts[0]);
+    const an=parseInt(parts[1]);
+    if(isNaN(luna)||isNaN(an)||luna<1||luna>12||an<2000) return null;
+    return {luna,an,lunaPad:String(luna).padStart(2,'0')};
+  }
+
+  // ── Parsăm toate rândurile ──
+  // Structura: records grupate pe (angajat_id, luna_iso) pentru ștergere corectă
+  const recordsMap={}; // key: angajatId+'|'+luna_iso → array de records
   const negasite=new Set();
+  let randariProcesate=0;
 
   for(let i=2;i<rows.length;i++){
     const row=rows[i];
     if(!row||!row[iMarca]||!row[iLuna]) continue;
 
-    // Luna: format "1.2026" sau "01.2026" → parsăm ca MM și YYYY
-    const lunaRaw=String(row[iLuna]).trim();
-    let luna,an;
-    if(lunaRaw.includes('.')){
-      const [lp,ap]=lunaRaw.split('.');
-      luna=parseInt(lp);an=parseInt(ap);
-    } else continue;
-    if(!luna||!an||luna<1||luna>12||an<2000) continue;
-    const lunaPad=String(luna).padStart(2,'0');
+    const lunaInfo=parseazaLuna(row[iLuna]);
+    if(!lunaInfo) continue;
+    const {luna,an,lunaPad}=lunaInfo;
 
-    const marca=String(row[iMarca]).trim();
-    const employeeNo='7'+String(parseInt(marca)).padStart(7,'0'); // mereu 8 cifre: 7 + marca cu zerouri
-    const angajatId=mapNrMat[employeeNo]||mapNrMat[marca]||null;
-    if(!angajatId) negasite.add(`${marca} (${row[iNume]||''})`);
+    // Marca: poate fi număr (205) sau string ('205') — normalizăm la int
+    const marcaRaw=String(row[iMarca]).trim().replace(/\.0$/,'');
+    const marcaInt=parseInt(marcaRaw);
+    if(isNaN(marcaInt)||marcaInt<=0) continue;
 
-    // Procesăm fiecare zi
+    const employeeNo='7'+String(marcaInt).padStart(7,'0');
+    const angajatId=mapNrMat[employeeNo]||null;
+    if(!angajatId){
+      negasite.add(marcaInt+'|'+(row[iNume]||''));
+      continue; // nu procesăm zile pentru angajați negăsiți
+    }
+
+    const lunaIso=an+'-'+lunaPad; // ex: "2026-01"
+    const groupKey=angajatId+'|'+lunaIso;
+    if(!recordsMap[groupKey]) recordsMap[groupKey]=[];
+
+    // Procesăm fiecare zi din lună
     for(const {zi,col} of ziCols){
-      if(col<0) continue;
       const val=row[col];
-      if(val===''||val===null||val===undefined) continue;
+      const cls=clasificaVal(val);
+      if(!cls) continue; // zi goală sau nelucrată
 
-      // Validăm că data există (feb nu are 29-31 în ani nebisecți etc.)
-      let dataStr;
-      try{
-        dataStr=`${an}-${lunaPad}-${String(zi).padStart(2,'0')}`;
-        const d=new Date(dataStr+'T00:00:00');
-        if(d.getMonth()+1!==luna) continue; // zi invalidă (ex: 31 feb)
-      }catch{continue;}
+      // Validăm că data e reală (ex: 31 feb nu există)
+      const dataStr=an+'-'+lunaPad+'-'+String(zi).padStart(2,'0');
+      const d=new Date(dataStr+'T00:00:00');
+      if(d.getMonth()+1!==luna) continue;
 
-      let tip='P',oreLucrate=null;
-      if(typeof val==='number'&&val>0){
-        tip='P';oreLucrate=val;
-      } else if(typeof val==='string'){
-        const v=val.trim().toUpperCase();
-        if(!v||v==='0') continue;
-        if(v==='CO') tip='CO';
-        else if(v==='CM') tip='CM';
-        else if(v==='SL'||v==='SP') tip='P'; // sărbătoare sau SPL = prezent
-        else if(v==='CFP') tip='CFP';
-        else if(v==='AB') tip='AB';
-        else if(v==='INV') tip='INV';
-        else{oreLucrate=parseFloat(v)||null;if(!oreLucrate) continue;}
-      } else continue;
-
-      if(angajatId){
-        records.push({
-          angajat_id:angajatId,
-          data:dataStr,
-          tip,
-          ore_lucrate:tip==='P'?oreLucrate:null,
-          created_by:currentProfile.id,
-          updated_at:new Date().toISOString()
-        });
-      }
-      totalRanduri++;
+      recordsMap[groupKey].push({
+        angajat_id:angajatId,
+        data:dataStr,
+        tip:cls.tip,
+        ore_lucrate:cls.ore,
+        created_by:currentProfile.id,
+        updated_at:new Date().toISOString()
+      });
+      randariProcesate++;
     }
   }
 
-  if(!records.length){
-    statusEl.innerHTML=`<div class="alert alert-danger">Nicio zi lucrată de importat.${negasite.size?` Mărci negăsite: ${[...negasite].slice(0,5).join(', ')}...`:''}</div>`;
+  const groupKeys=Object.keys(recordsMap);
+  if(!groupKeys.length){
+    const negasiteLista=[...negasite].slice(0,5).map(x=>x.split('|')[1]).join(', ');
+    statusEl.innerHTML='<div class="alert alert-danger">Nicio zi lucrată de importat.'+(negasite.size?' Mărci negăsite: '+negasiteLista:'')+'</div>';
     return;
   }
 
-  // Grupăm pe (angajat_id, lună) și ștergem mai întâi ce există deja, apoi inserăm
-  // Aflăm lunile unice din records
-  const luniUnice=new Set(records.map(r=>r.data.slice(0,7))); // "2026-01"
-  const angajatiUnici=new Set(records.map(r=>r.angajat_id));
+  // ── Ștergere + Insert grup cu grup (angajat + lună) ──
+  // Astfel evităm să ștergem date din luni sau angajați care nu sunt în fișier
+  let okCount=0,errCount=0;
+  let processed=0;
+  for(const key of groupKeys){
+    const [aId,lunaIso]=key.split('|');
+    processed++;
+    statusEl.innerHTML='<div class="alert alert-info">Se procesează '+processed+'/'+groupKeys.length+' combinații angajat-lună...</div>';
 
-  statusEl.innerHTML=`<div class="alert alert-info">Se curăță pontajele existente pentru ${luniUnice.size} lun${luniUnice.size===1?'ă':'i'}...</div>`;
-  for(const luna of luniUnice){
-    const startD=luna+'-01';
-    const endD=luna+'-31';
-    for(const aId of angajatiUnici){
-      await sb.from('pontaj').delete().eq('angajat_id',aId).gte('data',startD).lte('data',endD);
-    }
-  }
+    // Ștergem pontajul existent pentru acest angajat în această lună
+    await sb.from('pontaj').delete()
+      .eq('angajat_id',aId)
+      .gte('data',lunaIso+'-01')
+      .lte('data',lunaIso+'-31');
 
-  statusEl.innerHTML=`<div class="alert alert-info">Se salvează ${records.length} intrări de pontaj...</div>`;
-  const batchSize=300;
-  for(let i=0;i<records.length;i+=batchSize){
-    const batch=records.slice(i,i+batchSize);
+    // Inserăm rândurile noi
+    const batch=recordsMap[key];
+    if(!batch.length) continue;
     const {error}=await sb.from('pontaj').insert(batch);
-    if(error){console.error('Eroare insert pontaj:',error);skipCount+=batch.length;}
+    if(error){console.error('Eroare insert pontaj',key,error);errCount+=batch.length;}
     else okCount+=batch.length;
   }
 
-  const errTxt=skipCount?', <b>'+skipCount+'</b> erori':'';
-  const negasiteMsg=negasite.size?'<br><small>⚠️ '+negasite.size+' mărci negăsite în organigramă: '+[...negasite].slice(0,8).join(', ')+(negasite.size>8?'...':'')+'</small>':'';
-  const exportBtn=negasite.size?'<button class="btn btn-sm btn-danger" onclick="exportNegasitePDF()" style="margin-top:8px">📄 Export PDF mărci negăsite ('+negasite.size+')</button>':'';
-  statusEl.innerHTML='<div class="alert alert-success">Import pontaj finalizat: <b>'+okCount+'</b> intrări salvate'+errTxt+negasiteMsg+'</div>'+exportBtn;
-  // Stocăm negăsiții global pentru export PDF ulterior
-  window._pontajNegasite=[...negasite];
+  // Construim lista de negăsiți pentru PDF
+  const negasiteArr=[...negasite].map(x=>{
+    const [marca,nume]=x.split('|');
+    return marca+' ('+nume+')';
+  });
+  window._pontajNegasite=negasiteArr;
+
+  const errTxt=errCount?', <b>'+errCount+'</b> erori':'';
+  const negasiteMsg=negasite.size?'<br><small>⚠️ '+negasite.size+' mărci negăsite: '+negasiteArr.slice(0,6).join(', ')+(negasite.size>6?'...':'')+'</small>':'';
+  const exportBtn=negasite.size?'<button class="btn btn-sm" onclick="exportNegasitePDF()" style="margin-top:8px;background:var(--red-l);color:var(--red);border:1px solid var(--red)">📄 Export PDF mărci negăsite ('+negasite.size+')</button>':'';
+  statusEl.innerHTML='<div class="alert alert-success">Import pontaj finalizat: <b>'+okCount+'</b> intrări din <b>'+randariProcesate+'</b> zile procesate ('+groupKeys.length+' combinații angajat-lună)'+errTxt+negasiteMsg+'</div>'+exportBtn;
   toast('Import pontaj finalizat','success');
 }
 
