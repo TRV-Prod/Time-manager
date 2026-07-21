@@ -577,11 +577,15 @@ tr:hover td{background:var(--slate-ll)}
         <div class="card" style="margin-bottom:1rem">
           <div class="card-title" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
             <span>Vizualizare eficiență</span>
-            <select id="prod-chart-tip" class="form-control" style="width:220px" onchange="renderProductieChart()">
-              <option value="bara">Bară comparativă (recomandat)</option>
-              <option value="pie">Plăcintă (Pontat vs Normat vs Raportat)</option>
-              <option value="linie">Linie — evoluție zilnică</option>
+            <select id="prod-chart-tip" class="form-control" style="width:220px" onchange="saveFilters('prod',{chartTip:this.value});renderProductieChart()">
+              <option value="linie" selected>Linie — evoluție zilnică</option>
+              <option value="bara">Bară comparativă</option>
+              <option value="pie">Plăcintă</option>
             </select>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;white-space:nowrap">
+              <input type="checkbox" id="prod-chart-labels" onchange="renderProductieChart()" style="width:15px;height:15px;accent-color:var(--orange)"/>
+              Arată valori
+            </label>
           </div>
           <div id="prod-chart-wrap" style="position:relative;height:280px;margin-top:.5rem">
             <canvas id="prod-chart-canvas"></canvas>
@@ -1762,37 +1766,34 @@ function renderSaptamana(angajati,sarb,today){
   const zile=Array.from({length:7},(_,i)=>{const x=new Date(luni);x.setDate(luni.getDate()+i);return x;});
   const pontMap={};allPontaj.forEach(p=>{pontMap[p.angajat_id+'_'+p.data]=p;});
 
-  let html=`<div class="card" style="padding:0;overflow:hidden;overflow-x:auto"><div class="pont-week-grid" style="grid-template-columns:${isAdmin()?'34px ':''}180px repeat(7,1fr);min-width:700px">`;
-  if(isAdmin()) html+=`<div class="pont-week-hdr"></div>`;
-  html+=`<div class="pont-week-hdr">Angajat</div>`;
+  let html='<div class="card" style="padding:0;overflow:hidden;overflow-x:auto"><div class="pont-week-grid" style="grid-template-columns:'+(isAdmin()?'34px ':'')+' 180px repeat(7,1fr);min-width:700px">';
+  if(isAdmin()) html+='<div class="pont-week-hdr"></div>';
+  html+='<div class="pont-week-hdr">Angajat</div>';
   zile.forEach(z=>{
     const ds=fmtDateISO(z);const isToday=ds===today;
     const zi=['Dum','Lun','Mar','Mie','Joi','Vin','Sâm'][z.getDay()];
-    html+=`<div class="pont-week-hdr day-hdr${isToday?' today-col':''}"><span class="day-name">${zi}</span><span class="day-num">${z.getDate()}</span></div>`;
+    html+='<div class="pont-week-hdr day-hdr'+(isToday?' today-col':'')+'"><span class="day-name">'+zi+'</span><span class="day-num">'+z.getDate()+'</span></div>';
   });
   angajati.slice(0,40).forEach(ang=>{
-    const ini=(angNume(ang)).split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    const ini=angNume(ang).split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const isSel=selectedAngajatiIds.has(ang.id);
-    if(isAdmin()) html+=`<div class="pont-week-label" style="padding:6px;justify-content:center"><input type="checkbox" class="pont-ang-checkbox" ${isSel?'checked':''} onchange="toggleAngSelection('${ang.id}',this.checked)" style="width:15px;height:15px;accent-color:var(--orange);cursor:pointer"/></div>`;
-    html+=`<div class="pont-week-label"><div class="ang-avatar" style="width:30px;height:30px;font-size:11px;background:var(--orange-l);color:var(--orange-d)">${ini}</div><div style="font-size:12px;font-weight:500;margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${angNume(ang)}</div></div>`;
+    const marcaTxt=ang.nr_matricol?'<div style="font-size:9px;font-family:monospace;color:var(--slate-l)">'+ang.nr_matricol+'</div>':'';
+    if(isAdmin()) html+='<div class="pont-week-label" style="padding:6px;justify-content:center"><input type="checkbox" class="pont-ang-checkbox" '+(isSel?'checked':'')+' onchange="toggleAngSelection(\''+ang.id+'\',this.checked)" style="width:15px;height:15px;accent-color:var(--orange);cursor:pointer"/></div>';
+    html+='<div class="pont-week-label"><div class="ang-avatar" style="width:30px;height:30px;font-size:11px;background:var(--orange-l);color:var(--orange-d)">'+ini+'</div><div style="font-size:12px;font-weight:500;margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+angNume(ang)+marcaTxt+'</div></div>';
     zile.forEach(z=>{
       const ds=fmtDateISO(z);const isWe=z.getDay()===0||z.getDay()===6;const isToday=ds===today;
       const isSarb=sarb.has(ds);
       const pont=pontMap[ang.id+'_'+ds];
       let cls='pont-week-cell';if(isWe)cls+=' weekend-cell';if(isToday)cls+=' today-cell';
-      const click=isAdmin()?`onclick="editingPontajAngajatId='${ang.id}';openPontajModal('${ds}')"`:'';
+      const click=isAdmin()?'onclick="editingPontajAngajatId=\''+ang.id+'\';openPontajModal(\''+ds+'\')"' :'';
       let inner='';
-      if(isSarb) inner=`<span class="pont-tip-badge tip-SL">SL</span>`;
-      else if(pont){
-        if(pont.tip==='P'){
-          const ore=pont.ore_lucrate||(pont.ora_intrare&&pont.ora_iesire?Math.round((new Date('2000-01-01T'+pont.ora_iesire)-new Date('2000-01-01T'+pont.ora_intrare))/3600000*10)/10:null);
-          inner=`<span style="font-size:11px;font-weight:700;color:var(--green)">${ore!=null?ore:'P'}</span>${pont.ora_intrare?`<div class="pont-hours">${pont.ora_intrare.slice(0,5)}–${(pont.ora_iesire||'').slice(0,5)}</div>`:''}`;
-        } else {
-          inner=`<span class="pont-tip-badge tip-${pont.tip}">${pont.tip}</span>`;
-        }
-      }
-      html+=`<div class="${cls}" ${click}>${inner}</div>`;
-  if(angajati.length>40) html+=`<div class="alert alert-info" style="margin-top:.75rem">Se afișează primii 40 din ${angajati.length} angajați. Folosește căutarea pentru a restrânge lista.</div>`;
+      if(isSarb) inner='<span class="pont-tip-badge tip-SL">SL</span>';
+      else if(pont) inner=renderPontBadge(pont,'small');
+      html+='<div class="'+cls+'" '+click+'>'+inner+'</div>';
+    });
+  });
+  html+='</div></div>';
+  if(angajati.length>40) html+='<div class="alert alert-info" style="margin-top:.75rem">Se afișează primii 40 din '+angajati.length+' angajați. Folosește căutarea pentru a restrânge lista.</div>';
   return html;
 }
 
@@ -2777,6 +2778,8 @@ function exportProductiePDF(){
   const summary=document.getElementById('prod-summary')?.innerHTML||'';
   const tbody=document.getElementById('prod-tbody')?.innerHTML||'';
   const theadRow=document.querySelector('#page-productie thead tr')?.innerHTML||'';
+  // Curățăm elementele cu display:none din rezumat (nu putem folosi regex /s în template literal)
+  const rezumatCurat=rezumat.replace(/style="[^"]*display:none[^"]*"/g,'style="display:none"').replace(/<[^>]+style="display:none"[^>]*>[^<]*<\/[^>]+>/g,'');
 
   const printWin=window.open('','_blank');
   printWin.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titlu}</title>
@@ -2799,7 +2802,7 @@ function exportProductiePDF(){
   </style></head><body>
     <h1>${titlu}</h1>
     <div class="sub">Perioada: ${perioadaTxt} · Generat: ${new Date().toLocaleString('ro-RO')}</div>
-    <div class="rezumat">${rezumat.replace(/<[^>]+style="[^"]*display:none[^"]*"[^>]*>.*?<\/[^>]+>/gs,'')}</div>
+    <div class="rezumat">${rezumatCurat}</div>
     <div class="grid">${summary}</div>
     <table><thead><tr>${theadRow}</tr></thead><tbody>${tbody}</tbody></table>
     <script>window.onload=()=>setTimeout(()=>window.print(),200)<\/script>
@@ -3123,7 +3126,8 @@ function fmtMinutes(min){
 
 function renderProductieChart(){
   if(typeof Chart==='undefined') return;
-  const tip=document.getElementById('prod-chart-tip')?.value||'bara';
+  const tip=document.getElementById('prod-chart-tip')?.value||'linie';
+  const showLabels=document.getElementById('prod-chart-labels')?.checked||false;
   const {totalNormat,totalRaportat,totalPontat,perZi}=prodChartData;
   const canvas=document.getElementById('prod-chart-canvas');
   const emptyEl=document.getElementById('prod-chart-empty');
@@ -3231,6 +3235,28 @@ function renderProductieChart(){
     });
   } else if(tip==='linie'){
     const zile=Object.keys(perZi).sort();
+    // Plugin inline pentru datalabels pe graficul de linie
+    const datalabelsPlugin={
+      id:'lineLabels',
+      afterDatasetsDraw(chart){
+        if(!showLabels) return;
+        const {ctx}=chart;
+        chart.data.datasets.forEach((ds,di)=>{
+          const meta=chart.getDatasetMeta(di);
+          meta.data.forEach((pt,i)=>{
+            const val=ds.data[i];
+            if(!val) return;
+            ctx.save();
+            ctx.fillStyle=ds.borderColor;
+            ctx.font='bold 10px Arial';
+            ctx.textAlign='center';
+            ctx.textBaseline='bottom';
+            ctx.fillText(fmtMinutes(val),pt.x,pt.y-6);
+            ctx.restore();
+          });
+        });
+      }
+    };
     prodChartInstance=new Chart(ctx,{
       type:'line',
       data:{
@@ -3262,7 +3288,8 @@ function renderProductieChart(){
           y:{ticks:{callback:v=>fmtMinutes(v)},grid:{color:'#eef1f8'}},
           x:{grid:{display:false}}
         }
-      }
+      },
+      plugins:[datalabelsPlugin]
     });
   }
 }
