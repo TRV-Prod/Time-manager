@@ -1652,23 +1652,24 @@ async function refreshPontaj(){
   const angajati=getAngajatiFiltrati();
   if(!angajati.length){allPontaj=[];renderPontaj();return;}
 
-  // Supabase returnează implicit maxim 1000 rânduri. Cu mulți angajați pe o lună întreagă
-  // (ex. 150 ang × 31 zile = 4650 rânduri) datele se trunchiau silențios.
-  // Soluție: încărcăm în loturi de câte 50 de angajați, apoi concatenăm.
+  // Paginare pe angajat_id în loturi de 10.
+  // 10 angajați × 31 zile = max 310 rânduri per request — garantat sub limita de 1000
+  // a PostgREST indiferent de configurarea serverului Supabase.
+  // La 200 angajați rezultă 20 requesturi paralele → rapid și sigur.
   const ids=angajati.map(a=>a.id);
-  const batchSize=50;
-  const allResults=[];
-  for(let i=0;i<ids.length;i+=batchSize){
-    const batchIds=ids.slice(i,i+batchSize);
-    const {data,error}=await sb.from('pontaj')
-      .select('*')
+  const BATCH=10;
+  const batches=[];
+  for(let i=0;i<ids.length;i+=BATCH) batches.push(ids.slice(i,i+BATCH));
+
+  // Executăm toate batch-urile în paralel (Promise.all) pentru viteză maximă
+  const results=await Promise.all(batches.map(batchIds=>
+    sb.from('pontaj').select('*')
       .in('angajat_id',batchIds)
       .gte('data',start)
       .lte('data',end)
-      .limit(5000); // 50 ang × max 31 zile × eventuale duplicate = sigur sub 5000
-    if(!error&&data) allResults.push(...data);
-  }
-  allPontaj=allResults;
+  ));
+
+  allPontaj=results.flatMap(r=>r.data||[]);
   renderPontaj();
 }
 
