@@ -1650,13 +1650,25 @@ async function refreshPontaj(){
   await loadSarbatori(y);
 
   const angajati=getAngajatiFiltrati();
-  if(angajati.length){
-    const ids=angajati.map(a=>a.id);
-    const {data}=await sb.from('pontaj').select('*').in('angajat_id',ids).gte('data',start).lte('data',end);
-    allPontaj=data||[];
-  } else {
-    allPontaj=[];
+  if(!angajati.length){allPontaj=[];renderPontaj();return;}
+
+  // Supabase returnează implicit maxim 1000 rânduri. Cu mulți angajați pe o lună întreagă
+  // (ex. 150 ang × 31 zile = 4650 rânduri) datele se trunchiau silențios.
+  // Soluție: încărcăm în loturi de câte 50 de angajați, apoi concatenăm.
+  const ids=angajati.map(a=>a.id);
+  const batchSize=50;
+  const allResults=[];
+  for(let i=0;i<ids.length;i+=batchSize){
+    const batchIds=ids.slice(i,i+batchSize);
+    const {data,error}=await sb.from('pontaj')
+      .select('*')
+      .in('angajat_id',batchIds)
+      .gte('data',start)
+      .lte('data',end)
+      .limit(5000); // 50 ang × max 31 zile × eventuale duplicate = sigur sub 5000
+    if(!error&&data) allResults.push(...data);
   }
+  allPontaj=allResults;
   renderPontaj();
 }
 
@@ -3071,7 +3083,7 @@ async function renderProductieRaport(){
     const angSel=document.getElementById('prod-angajat-sel').value;
     if(angSel) pontQ=pontQ.eq('angajat_id',angSel);
   }
-  const {data:pontData}=await pontQ;
+  const {data:pontData}=await pontQ.limit(10000);
   (pontData||[]).forEach(p=>{
     let ore=p.ore_lucrate;
     if(!ore&&p.ora_intrare&&p.ora_iesire){
