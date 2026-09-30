@@ -3423,10 +3423,24 @@ async function renderProductieRaport(){
   let pontMap={}; // angajat_id -> total ore pontate (h) în perioadă
   let pontMapPerZi={}; // data -> total minute pontate (toți angajații din filtrul curent)
   let pontQ=sb.from('pontaj').select('angajat_id,ore_lucrate,ora_intrare,ora_iesire,data').gte('data',dataStart).lte('data',dataEnd).eq('tip','P');
-  if(!isAdmin()&&currentProfile?.angajat_id) pontQ=pontQ.eq('angajat_id',currentProfile.angajat_id);
-  else if(isAdmin()){
+  if(!isAdmin()&&currentProfile?.angajat_id){
+    pontQ=pontQ.eq('angajat_id',currentProfile.angajat_id);
+  } else if(isAdmin()){
     const angSel=document.getElementById('prod-angajat-sel').value;
-    if(angSel) pontQ=pontQ.eq('angajat_id',angSel);
+    const sectSel2=document.getElementById('prod-sectie-sel').value;
+    const wcSel2=document.getElementById('prod-workcenter-sel').value;
+    if(angSel){
+      // Filtru pe un singur angajat
+      pontQ=pontQ.eq('angajat_id',angSel);
+    } else if(wcSel2){
+      // Filtru pe workcenter: extragem angajat_id-urile unice din evenimentele deja filtrate
+      const idsFromWc=[...new Set((data||[]).map(r=>r.angajat_id).filter(Boolean))];
+      pontQ=pontQ.in('angajat_id',idsFromWc.length?idsFromWc:['__none__']);
+    } else if(sectSel2){
+      // Filtru pe secție
+      const idAngajatiSectie2=allAngajati.filter(a=>a.sectie_id===sectSel2).map(a=>a.id);
+      pontQ=pontQ.in('angajat_id',idAngajatiSectie2.length?idAngajatiSectie2:['__none__']);
+    }
   }
   const {data:pontData}=await pontQ.limit(10000);
   (pontData||[]).forEach(p=>{
