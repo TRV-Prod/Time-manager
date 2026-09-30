@@ -395,6 +395,13 @@ tr:hover td{background:var(--slate-ll)}
             <div id="dash-cereri"></div>
           </div>
         </div>
+        <div class="card" style="margin-top:1.25rem">
+          <div class="card-title" style="justify-content:space-between">
+            <span style="display:flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Prezență azi pe posturi de lucru</span>
+            <span id="dash-prezenta-data" style="font-size:11px;font-weight:400;color:var(--text3)"></span>
+          </div>
+          <div id="dash-prezenta"><div class="loading-center"><div class="spinner"></div></div></div>
+        </div>
       </div>
 
       <!-- PONTAJ -->
@@ -1535,6 +1542,9 @@ async function renderDashboard(){
   }
   document.getElementById('dash-pont-chart').innerHTML=chartHtml;
 
+  // ── Widget prezență pe posturi de lucru ──
+  renderDashPrezenta();
+
   const recent=allCereri.slice(0,5);
   document.getElementById('dash-cereri').innerHTML=recent.length?recent.map(i=>{
     const ang=allAngajati.find(a=>a.id===i.angajat_id);
@@ -1550,6 +1560,150 @@ async function deleteCerereDashboard(id){
 }
 function statCard(label,val,color,bg,icon){
   return `<div class="stat"><div class="stat-icon" style="background:${bg};color:${color}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${icon}"/></svg></div><div class="stat-body"><div class="stat-label">${label}</div><div class="stat-value" style="color:${color}">${val}</div></div></div>`;
+}
+
+async function renderDashPrezenta(){
+  const today=new Date();
+  const todayIso=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+  const el=document.getElementById('dash-prezenta');
+  const elData=document.getElementById('dash-prezenta-data');
+  if(elData) elData.textContent=today.toLocaleDateString('ro-RO',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+
+  // Pontajul de azi
+  const {data:pontAzi}=await sb.from('pontaj').select('angajat_id,tip').eq('data',todayIso);
+  const pontMap={};
+  (pontAzi||[]).forEach(r=>{pontMap[r.angajat_id]=r.tip;});
+
+  // Angajați activi cu date
+  const activi=allAngajati.filter(a=>a.activ);
+
+  // Helper: obținem ierarhia secție → grup/workcenter → angajat
+  // Nodurile de tip sectie sau manager sunt capete de secție
+  // Nodurile de tip sef_formatie, workcenter sunt posturi de lucru (subgrupuri)
+  // Angajații sunt frunze
+
+  // Construim un arbore: pentru fiecare angajat aflăm secția și postul de lucru
+  function getSectieAndPost(ang){
+    if(!ang.org_node_id) return {sectie:'Nealocat',post:'Nealocat'};
+    let nod=allOrgNodes.find(n=>n.id===ang.org_node_id);
+    if(!nod) return {sectie:'Nealocat',post:'Nealocat'};
+
+    // Urcăm ierarhia pentru a găsi secția și postul (grupul direct al angajatului)
+    let postNod=null; // nodul de tip sef_formatie/workcenter/manager imediat deasupra
+    let sectieNod=null; // nodul de tip sectie/manager_dep/director
+    const POSTURI_TIPURI=new Set(['sef_formatie','workcenter','manager','sectie']);
+    const SECTII_TIPURI=new Set(['sectie','manager_dep','director']);
+
+    let cursor=nod;
+    // Dacă nodul angajat nu e de tip 'angajat', e și nod structural — tratăm direct
+    while(cursor){
+      const parent=cursor.parent_id?allOrgNodes.find(n=>n.id===cursor.parent_id):null;
+      if(!postNod && parent && POSTURI_TIPURI.has(parent.tip)){
+        postNod=parent;
+      }
+      if(parent && SECTII_TIPURI.has(parent.tip)){
+        sectieNod=parent;
+        break;
+      }
+      cursor=parent;
+    }
+    // Dacă n-am găsit secție, urcăm să o căutăm
+    if(!sectieNod){
+      cursor=nod;
+      while(cursor){
+        if(SECTII_TIPURI.has(cursor.tip)){sectieNod=cursor;break;}
+        cursor=cursor.parent_id?allOrgNodes.find(n=>n.id===cursor.parent_id):null;
+      }
+    }
+    // Dacă n-am găsit post, luăm secția ca post
+    if(!postNod) postNod=sectieNod;
+
+    // Preferăm secția din sectii table dacă există
+    let sectieNume='Nealocat';
+    if(ang.sectie_id){
+      const s=allSectii.find(x=>x.id===ang.sectie_id);
+      if(s) sectieNume=s.nume;
+    } else if(sectieNod){
+      sectieNume=sectieNod.nume;
+    }
+
+    const postNume=postNod?(postNod.id===sectieNod?.id?'General':postNod.nume):'General';
+    return {sectie:sectieNume,post:postNume};
+  }
+
+  // Grupăm angajații pe secție → post
+  const grupuri={}; // {sectie: {post: {total,co,inv,cfp,cm,prezenti,angajati:[]}}}
+  activi.forEach(ang=>{
+    const {sectie,post}=getSectieAndPost(ang);
+    if(!grupuri[sectie]) grupuri[sectie]={};
+    if(!grupuri[sectie][post]) grupuri[sectie][post]={total:0,prezenti:0,co:0,inv:0,cfp:0,cm:0,ab:0};
+    const g=grupuri[sectie][post];
+    g.total++;
+    const tip=pontMap[ang.id];
+    if(tip==='P') g.prezenti++;
+    else if(tip==='CO') g.co++;
+    else if(tip==='INV') g.inv++;
+    else if(tip==='CFP') g.cfp++;
+    else if(tip==='CM') g.cm++;
+    else if(tip==='AB') g.ab++;
+  });
+
+  const sectiiSortate=Object.keys(grupuri).sort((a,b)=>a.localeCompare(b,'ro'));
+
+  if(!sectiiSortate.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:.5rem 0">Nicio dată disponibilă.</div>';
+    return;
+  }
+
+  const pillCO=n=>n?`<span title="Concediu odihna" style="background:var(--blue-l,#dbeafe);color:#1d4ed8;border-radius:5px;padding:1px 7px;font-size:11px;font-weight:600">${n} CO</span>`:'';
+  const pillINV=n=>n?`<span title="Invoire" style="background:var(--purple-l);color:var(--purple);border-radius:5px;padding:1px 7px;font-size:11px;font-weight:600">${n} INV</span>`:'';
+  const pillCM=n=>n?`<span title="Concediu medical" style="background:var(--amber-l);color:var(--amber);border-radius:5px;padding:1px 7px;font-size:11px;font-weight:600">${n} CM</span>`:'';
+  const pillCFP=n=>n?`<span title="Concediu fara plata" style="background:var(--red-l);color:var(--red);border-radius:5px;padding:1px 7px;font-size:11px;font-weight:600">${n} CFP</span>`:'';
+  const pillAB=n=>n?`<span title="Absent" style="background:var(--gray-l);color:var(--gray);border-radius:5px;padding:1px 7px;font-size:11px;font-weight:600">${n} AB</span>`:'';
+
+  let html='<div style="display:flex;flex-direction:column;gap:0">';
+  sectiiSortate.forEach(sectie=>{
+    const posturi=grupuri[sectie];
+    const posturiSortate=Object.keys(posturi).sort((a,b)=>a.localeCompare(b,'ro'));
+    // totaluri secție
+    const totSectie=posturiSortate.reduce((s,p)=>s+posturi[p].total,0);
+    const prSectie=posturiSortate.reduce((s,p)=>s+posturi[p].prezenti,0);
+
+    html+=`<div style="margin-bottom:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--navy);border-radius:8px 8px 0 0;cursor:pointer" onclick="this.parentElement.querySelector('.sectie-body').classList.toggle('collapsed')">
+        <span style="color:#fff;font-weight:700;font-size:13px">🏭 ${sectie}</span>
+        <span style="color:rgba(255,255,255,.75);font-size:12px">${prSectie} prezenti / ${totSectie} total</span>
+      </div>
+      <div class="sectie-body" style="border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;overflow:hidden">`;
+
+    posturiSortate.forEach((post,pi)=>{
+      const g=posturi[post];
+      const nepontat=g.total-(g.prezenti+g.co+g.inv+g.cfp+g.cm+g.ab);
+      const barW=g.total?Math.round(g.prezenti/g.total*100):0;
+      html+=`<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;${pi>0?'border-top:1px solid var(--border)':''};background:var(--card)">
+        <div style="width:180px;min-width:120px;flex-shrink:0">
+          <div style="font-size:13px;font-weight:600;color:var(--navy)">${post}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:1px">${g.total} angajat${g.total!==1?'i':''}</div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <div style="flex:1;height:8px;background:var(--bg);border-radius:6px;overflow:hidden">
+              <div style="height:100%;width:${barW}%;background:var(--green);border-radius:6px;transition:.3s"></div>
+            </div>
+            <span style="font-size:11px;color:var(--green);font-weight:700;min-width:32px">${g.prezenti}P</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:3px">
+            ${pillCO(g.co)}${pillINV(g.inv)}${pillCM(g.cm)}${pillCFP(g.cfp)}${pillAB(g.ab)}${nepontat>0?`<span style="background:#f8fafc;color:var(--text3);border-radius:5px;padding:1px 7px;font-size:11px">${nepontat} nepontat</span>`:''}
+          </div>
+        </div>
+      </div>`;
+    });
+
+    html+=`</div></div>`;
+  });
+
+  html+='</div>';
+  el.innerHTML=html;
 }
 
 // ═══════════════════════════════════════════════
