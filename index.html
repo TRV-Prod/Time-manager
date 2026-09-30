@@ -2043,10 +2043,11 @@ function renderInvoiri(){
         </div>
         <span class="badge ${statusBadge(i.status)}">${statusLabel(i.status)}</span>
       </div>
-      ${canApprove?`<div style="display:flex;gap:6px;margin-top:.75rem" onclick="event.stopPropagation()">
-        <button class="btn btn-success btn-sm" onclick="processInvoiere('${i.id}','aprobat')">✓ Aprobă</button>
-        <button class="btn btn-danger btn-sm" onclick="processInvoiere('${i.id}','refuzat')">✗ Refuză</button>
-      </div>`:''}
+      <div style="display:flex;gap:6px;margin-top:.75rem" onclick="event.stopPropagation()">
+        ${canApprove?`<button class="btn btn-success btn-sm" onclick="processInvoiere('${i.id}','aprobat')">✓ Aprobă</button>
+        <button class="btn btn-danger btn-sm" onclick="processInvoiere('${i.id}','refuzat')">✗ Refuză</button>`:''}
+        <button class="btn btn-sm" onclick="printCerere('${i.id}')" style="background:var(--orange);color:#fff;margin-left:auto">🖨️ Printează</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -2133,6 +2134,7 @@ function openInvDetail(id){
     <div class="form-group"><div class="form-label">Depusă la</div><div>${fmtDateTime(i.created_at)}</div></div>`;
   const footer=document.getElementById('modal-inv-detail-footer');
   footer.innerHTML='<button class="btn" onclick="closeModal(\'modal-inv-detail\')">Închide</button>';
+  footer.innerHTML+=`<button class="btn" onclick="printCerere('${i.id}')" style="background:var(--orange);color:#fff">🖨️ Printează</button>`;
   if(isAdmin()&&i.status==='pending') footer.innerHTML+=`<button class="btn btn-danger" onclick="processInvoiere('${i.id}','refuzat');closeModal('modal-inv-detail')">Refuză</button><button class="btn btn-success" onclick="processInvoiere('${i.id}','aprobat');closeModal('modal-inv-detail')">Aprobă</button>`;
   openModal('modal-inv-detail');
 }
@@ -2142,6 +2144,149 @@ async function processInvoiere(id,status){
   if(error){toast('Eroare','error');return;}
   toast(status==='aprobat'?'Cerere aprobată ✓':'Cerere refuzată','success');
   await loadInvoiri();renderInvoiri();updateBadges();
+}
+
+// ── Print cerere (CO / INV / CFP) ──
+// Generează un document printabil în fereastra nouă, cu formatul oficial Team Industries
+function printCerere(id){
+  const c=allCereri.find(x=>x.id===id);if(!c) return;
+  const ang=allAngajati.find(a=>a.id===c.angajat_id);
+  if(!ang){toast('Angajat negăsit','error');return;}
+
+  // Nume complet: NUME Inițială Prenume
+  const numeComplet=(ang.nume||'').toUpperCase()+' '+(ang.initiala?ang.initiala+' ':'')+ang.prenume;
+  const functia=ang.functie||'';
+
+  // Găsim șeful direct (managerul nodului din organigramă)
+  let sefNume='';
+  if(ang.org_node_id){
+    const nod=allOrgNodes.find(n=>n.id===ang.org_node_id);
+    const nodParinte=nod&&nod.parent_id?allOrgNodes.find(n=>n.id===nod.parent_id):null;
+    if(nodParinte){
+      // căutăm angajatul asociat nodului părinte
+      const sefAng=allAngajati.find(a=>a.org_node_id===nodParinte.id);
+      if(sefAng) sefNume=(sefAng.nume||'').toUpperCase()+' '+(sefAng.initiala?sefAng.initiala+' ':'')+sefAng.prenume;
+      else sefNume=nodParinte.nume||'';
+    }
+  }
+
+  // Titlu și corp text în funcție de tip
+  const isCO=c.tip==='CO',isINV=c.tip==='INV',isCFP=c.tip==='CFP';
+  const titlu=isCO?'CERERE<br>CONCEDIU DE ODIHNĂ':isINV?'CERERE<br>DE INVOIRE':'CERERE<br>CONCEDIU FĂRĂ PLATĂ';
+
+  const fmtD=s=>{if(!s)return'';const[y,m,d]=s.split('-');return d+'.'+m+'.'+y;};
+  const azi=new Date();
+  const aziStr=azi.getDate().toString().padStart(2,'0')+'.'+(azi.getMonth()+1).toString().padStart(2,'0')+'.'+azi.getFullYear();
+
+  let corpText='';
+  if(isCO){
+    corpText=`Subsemnata/UL, <strong>${numeComplet}</strong>, angajat/ă al/a SC TEAM INDUSTRIES ROMANIA SRL,
+      vă rog să-mi aprobați efectuarea a <strong>${c.zile_lucratoare||'...'} zile</strong> de concediu de odihnă
+      în perioada <strong>${fmtD(c.data_start)} – ${fmtD(c.data_sfarsit)}</strong>.`;
+  } else if(isINV){
+    const oraStart=(c.ora_start||'').slice(0,5);
+    const oraSf=(c.ora_sfarsit||'').slice(0,5);
+    corpText=`Subsemnata/UL, <strong>${numeComplet}</strong>, angajat/ă al/a SC TEAM INDUSTRIES ROMANIA SRL,
+      vă rog să-mi aprobați o invoire în data de <strong>${fmtD(c.data_start)}</strong>
+      ${oraStart&&oraSf?', în intervalul orar <strong>'+oraStart+' – '+oraSf+'</strong>':''}.`;
+  } else {
+    corpText=`Subsemnata/UL, <strong>${numeComplet}</strong>, angajat/ă al/a SC TEAM INDUSTRIES ROMANIA SRL,
+      vă rog să-mi aprobați efectuarea unui concediu fără plată
+      în perioada <strong>${fmtD(c.data_start)} – ${fmtD(c.data_sfarsit)}</strong>
+      ${c.zile_lucratoare?' (<strong>'+c.zile_lucratoare+' zile lucrătoare</strong>)':''}.`;
+  }
+  if(c.motiv) corpText+=`<br><br>Motivul invocat: <em>${c.motiv}</em>`;
+
+  const statusHtml=c.status==='aprobat'
+    ?'<span style="color:#166534;font-weight:700">✓ APROBAT</span>'
+    :c.status==='refuzat'
+    ?'<span style="color:#991b1b;font-weight:700">✗ REFUZAT</span>'
+    :'<span style="color:#92400e">⏳ ÎN AȘTEPTARE</span>';
+
+  const html=`<!DOCTYPE html><html lang="ro"><head><meta charset="UTF-8">
+  <title>Cerere ${c.tip} – ${numeComplet}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Times New Roman',Times,serif;font-size:13pt;color:#000;background:#fff;padding:0}
+    .page{width:210mm;min-height:297mm;margin:0 auto;padding:25mm 25mm 20mm 25mm;position:relative}
+    .header-logo{text-align:left;font-size:10pt;margin-bottom:8mm}
+    .header-logo .company{font-weight:700;font-size:11pt}
+    .title{text-align:center;font-size:18pt;font-weight:700;letter-spacing:1px;margin:10mm 0 8mm;line-height:1.3}
+    .body-text{font-size:12pt;line-height:1.9;text-align:justify;margin:8mm 0;font-variant:small-caps}
+    .thanks{font-size:12pt;font-variant:small-caps;margin:6mm 0 10mm}
+    .semnatura-row{display:flex;justify-content:space-between;margin-top:14mm;font-size:11pt}
+    .semnatura-col{width:45%}
+    .semnatura-label{font-weight:700;margin-bottom:8mm}
+    .semnatura-linie{border-top:1px solid #000;padding-top:3mm;font-size:10pt;color:#333}
+    .acord-row{margin-top:10mm;font-size:11pt}
+    .acord-label{font-weight:700;margin-bottom:3mm}
+    .acord-linie{display:flex;gap:4mm;align-items:baseline}
+    .acord-text{white-space:nowrap}
+    .acord-dots{flex:1;border-bottom:1px solid #000;margin-bottom:2mm}
+    .status-bar{text-align:center;font-size:11pt;margin:8mm 0;padding:3mm;border:1px solid #ccc;background:#f9f9f9}
+    .footer-info{position:absolute;bottom:12mm;left:25mm;right:25mm;font-size:9pt;color:#666;border-top:1px solid #ddd;padding-top:3mm;display:flex;justify-content:space-between}
+    @media print{
+      body{padding:0}
+      .page{padding:20mm 20mm 15mm 20mm}
+      .no-print{display:none!important}
+      @page{size:A4 portrait;margin:0}
+    }
+    .btn-print{display:inline-block;padding:8px 20px;background:#ea580c;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-family:sans-serif;margin:8px 4px}
+    .btn-close{display:inline-block;padding:8px 20px;background:#64748b;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-family:sans-serif;margin:8px 4px}
+    .print-bar{text-align:center;padding:10px;background:#f1f5f9;border-bottom:1px solid #e2e8f0;font-family:sans-serif}
+  </style></head><body>
+  <div class="print-bar no-print">
+    <button class="btn-print" onclick="window.print()">🖨️ Printează</button>
+    <button class="btn-close" onclick="window.close()">✕ Închide</button>
+    <span style="font-size:12px;color:#64748b;margin-left:12px">Status cerere: ${statusHtml}</span>
+  </div>
+  <div class="page">
+    <div class="header-logo">
+      <div class="company">SC TEAM INDUSTRIES ROMANIA SRL</div>
+      <div style="font-size:9.5pt;color:#444">Sistem de pontaj electronic – Pontaj Pro</div>
+    </div>
+
+    <div class="title">${titlu}</div>
+
+    <div class="body-text">${corpText}</div>
+
+    <div class="thanks">Vă mulțumesc!</div>
+
+    <div class="semnatura-row">
+      <div class="semnatura-col">
+        <div class="semnatura-label">DATA,</div>
+        <div style="font-size:12pt;font-weight:700">${aziStr}</div>
+      </div>
+      <div class="semnatura-col">
+        <div class="semnatura-label">SEMNĂTURA ANGAJAT,</div>
+        <div style="margin-top:12mm;border-top:1px solid #000;padding-top:3mm;font-size:10pt;color:#555">${numeComplet}</div>
+      </div>
+    </div>
+
+    <div class="acord-row">
+      <div class="acord-label">Acord Șef Departament</div>
+      <div class="acord-linie">
+        <span class="acord-text">${sefNume||'................................................'}</span>
+        <span class="acord-dots"></span>
+      </div>
+    </div>
+
+    ${c.status!=='pending'?`<div class="status-bar" style="margin-top:12mm">
+      Status cerere: ${statusHtml}
+      ${c.mesaj_admin?'<br><em>'+c.mesaj_admin+'</em>':''}
+    </div>`:''}
+
+    <div class="footer-info">
+      <span>Nr. înregistrare: ${id.slice(0,8).toUpperCase()}</span>
+      <span>Funcție: ${functia}</span>
+      <span>Generat: ${aziStr}</span>
+    </div>
+  </div>
+  </body></html>`;
+
+  const w=window.open('','_blank','width=900,height=900');
+  w.document.write(html);
+  w.document.close();
 }
 
 
