@@ -1546,6 +1546,7 @@ async function renderDashboard(){
   document.getElementById('dash-pont-chart').innerHTML=chartHtml;
 
   // ── Widget prezență pe posturi de lucru ──
+  initDashPrezentaFilter();
   renderDashPrezenta();
 
   const recent=allCereri.slice(0,5);
@@ -1565,6 +1566,40 @@ function statCard(label,val,color,bg,icon){
   return `<div class="stat"><div class="stat-icon" style="background:${bg};color:${color}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${icon}"/></svg></div><div class="stat-body"><div class="stat-label">${label}</div><div class="stat-value" style="color:${color}">${val}</div></div></div>`;
 }
 
+// Secțiile selectate în filtrul widget-ului de prezență (Set de id-uri; gol = toate)
+let dashPrezentaSectiiSel=new Set();
+
+function initDashPrezentaFilter(){
+  const wrap=document.getElementById('dash-sectii-filter');
+  if(!wrap||!allSectii.length) return;
+  // Buton "Toate"
+  wrap.innerHTML=`<button onclick="dashPrezentaToggleSectie(null)" id="dash-f-all"
+    style="padding:3px 10px;border-radius:20px;border:1.5px solid var(--navy);background:var(--navy);color:#fff;font-size:11px;font-weight:600;cursor:pointer">Toate</button>`+
+    allSectii.map(s=>`<button onclick="dashPrezentaToggleSectie('${s.id}')" id="dash-f-${s.id}"
+      style="padding:3px 10px;border-radius:20px;border:1.5px solid var(--border);background:var(--card);color:var(--text2);font-size:11px;font-weight:500;cursor:pointer">${s.nume}</button>`).join('');
+}
+
+function dashPrezentaToggleSectie(id){
+  if(id===null){
+    dashPrezentaSectiiSel.clear();
+  } else {
+    if(dashPrezentaSectiiSel.has(id)) dashPrezentaSectiiSel.delete(id);
+    else dashPrezentaSectiiSel.add(id);
+  }
+  // Actualizăm stilul butoanelor
+  document.getElementById('dash-f-all')?.style && (document.getElementById('dash-f-all').style.background=dashPrezentaSectiiSel.size===0?'var(--navy)':'var(--card)');
+  document.getElementById('dash-f-all')?.style && (document.getElementById('dash-f-all').style.color=dashPrezentaSectiiSel.size===0?'#fff':'var(--text2)');
+  allSectii.forEach(s=>{
+    const btn=document.getElementById(`dash-f-${s.id}`);
+    if(!btn) return;
+    const sel=dashPrezentaSectiiSel.has(s.id);
+    btn.style.background=sel?'var(--orange)':'var(--card)';
+    btn.style.color=sel?'#fff':'var(--text2)';
+    btn.style.borderColor=sel?'var(--orange)':'var(--border)';
+  });
+  renderDashPrezenta();
+}
+
 async function renderDashPrezenta(){
   const today=new Date();
   const todayIso=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
@@ -1572,89 +1607,60 @@ async function renderDashPrezenta(){
   const elData=document.getElementById('dash-prezenta-data');
   if(elData) elData.textContent=today.toLocaleDateString('ro-RO',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 
-  // 1. Pontajul de azi (sursa primară)
+  // 1. Pontajul de azi
   const {data:pontAzi}=await sb.from('pontaj').select('angajat_id,tip').eq('data',todayIso);
   const pontMap={};
   (pontAzi||[]).forEach(r=>{pontMap[r.angajat_id]=r.tip;});
 
-  // 2. Cereri aprobate care acoperă azi — completează ce nu e în pontaj
-  // Cereri CO, CFP, INV (invoiri pe zi) cu status=aprobat și data_start <= azi <= data_sfarsit
+  // 2. Cereri aprobate care acoperă azi
   const cereriAzi=(allCereri||[]).filter(c=>
     c.status==='aprobat' &&
     c.data_start<=todayIso &&
     (c.data_sfarsit||c.data_start)>=todayIso
   );
-  // Map angajat_id → tip cerere (CO, CFP, INV, CM)
   const cereriMap={};
   cereriAzi.forEach(c=>{
-    // Mapăm tipul cererii la tipul pontaj
     const tip=c.tip==='CO'?'CO':c.tip==='CFP'?'CFP':c.tip==='INV'?'INV':c.tip==='CM'?'CM':null;
     if(tip && !cereriMap[c.angajat_id]) cereriMap[c.angajat_id]=tip;
   });
 
-  // Funcție: care e statusul unui angajat azi?
-  // Prioritate: pontaj > cerere aprobată > nepontat
   function statusAngajat(angId){
-    if(pontMap[angId]) return pontMap[angId];
-    if(cereriMap[angId]) return cereriMap[angId]; // din cerere aprobată
-    return null; // nepontat
+    return pontMap[angId]||cereriMap[angId]||null;
   }
 
-  // Angajați activi
-  const activi=allAngajati.filter(a=>a.activ);
+  // Angajați activi, filtrați după secțiile selectate
+  const activi=allAngajati.filter(a=>{
+    if(!a.activ) return false;
+    if(dashPrezentaSectiiSel.size===0) return true;
+    return dashPrezentaSectiiSel.has(a.sectie_id);
+  });
 
-  // Helper: secție și post de lucru din organigramă
-  function getSectieAndPost(ang){
-    if(!ang.org_node_id) return {sectie:'Nealocat',post:'Nealocat'};
-    let nod=allOrgNodes.find(n=>n.id===ang.org_node_id);
-    if(!nod) return {sectie:'Nealocat',post:'Nealocat'};
+  // Grupăm pe secție → grup (câmpul ang.grup, nu din organigramă)
+  // Angajații fără grup merg în "Fără grup"
+  const grupuri={}; // { sectieNume: { grupNume: {total,pontati,co,inv,cfp,cm,ab,nepontat} } }
 
-    let postNod=null;
-    let sectieNod=null;
-    const POSTURI_TIPURI=new Set(['sef_formatie','workcenter','manager','sectie']);
-    const SECTII_TIPURI=new Set(['sectie','manager_dep','director']);
-
-    let cursor=nod;
-    while(cursor){
-      const parent=cursor.parent_id?allOrgNodes.find(n=>n.id===cursor.parent_id):null;
-      if(!postNod && parent && POSTURI_TIPURI.has(parent.tip)) postNod=parent;
-      if(parent && SECTII_TIPURI.has(parent.tip)){sectieNod=parent;break;}
-      cursor=parent;
-    }
-    if(!sectieNod){
-      cursor=nod;
-      while(cursor){
-        if(SECTII_TIPURI.has(cursor.tip)){sectieNod=cursor;break;}
-        cursor=cursor.parent_id?allOrgNodes.find(n=>n.id===cursor.parent_id):null;
-      }
-    }
-    if(!postNod) postNod=sectieNod;
-
-    let sectieNume='Nealocat';
-    if(ang.sectie_id){const s=allSectii.find(x=>x.id===ang.sectie_id);if(s)sectieNume=s.nume;}
-    else if(sectieNod) sectieNume=sectieNod.nume;
-
-    const postNume=postNod?(postNod.id===sectieNod?.id?'General':postNod.nume):'General';
-    return {sectie:sectieNume,post:postNume};
-  }
-
-  // Grupăm pe secție → post
-  // g = {total, activi(=prezenti), inactivi(=CO+INV+CFP+CM+AB), pontati, co, inv, cfp, cm, ab, nepontat}
-  const grupuri={};
   activi.forEach(ang=>{
-    const {sectie,post}=getSectieAndPost(ang);
-    if(!grupuri[sectie]) grupuri[sectie]={};
-    if(!grupuri[sectie][post]) grupuri[sectie][post]={total:0,pontati:0,co:0,inv:0,cfp:0,cm:0,ab:0,nepontat:0};
-    const g=grupuri[sectie][post];
+    // Secția
+    let sectieNume='Nealocat';
+    if(ang.sectie_id){
+      const s=allSectii.find(x=>x.id===ang.sectie_id);
+      if(s) sectieNume=s.nume;
+    }
+    // Grupul (câmp direct pe angajat)
+    const grupNume=(ang.grup||'').trim()||'—';
+
+    if(!grupuri[sectieNume]) grupuri[sectieNume]={};
+    if(!grupuri[sectieNume][grupNume]) grupuri[sectieNume][grupNume]={total:0,pontati:0,co:0,inv:0,cfp:0,cm:0,ab:0,nepontat:0};
+    const g=grupuri[sectieNume][grupNume];
     g.total++;
     const tip=statusAngajat(ang.id);
-    if(!tip){g.nepontat++;}
-    else if(tip==='P'){g.pontati++;}
-    else if(tip==='CO'){g.co++;}
-    else if(tip==='INV'){g.inv++;}
-    else if(tip==='CFP'){g.cfp++;}
-    else if(tip==='CM'){g.cm++;}
-    else if(tip==='AB'){g.ab++;}
+    if(!tip) g.nepontat++;
+    else if(tip==='P') g.pontati++;
+    else if(tip==='CO') g.co++;
+    else if(tip==='INV') g.inv++;
+    else if(tip==='CFP') g.cfp++;
+    else if(tip==='CM') g.cm++;
+    else if(tip==='AB') g.ab++;
   });
 
   const sectiiSortate=Object.keys(grupuri).sort((a,b)=>a.localeCompare(b,'ro'));
@@ -1663,44 +1669,46 @@ async function renderDashPrezenta(){
     return;
   }
 
-  const pill=(n,label,bg,col,title)=>n?`<span title="${title}" style="background:${bg};color:${col};border-radius:5px;padding:1px 8px;font-size:11px;font-weight:600">${n} ${label}</span>`:'';
+  const pill=(n,label,bg,col,ttl)=>n?`<span title="${ttl}" style="background:${bg};color:${col};border-radius:5px;padding:1px 8px;font-size:11px;font-weight:600">${n} ${label}</span>`:'';
 
-  let html='<div style="display:flex;flex-direction:column;gap:6px">';
+  let html='<div style="display:flex;flex-direction:column;gap:8px">';
   sectiiSortate.forEach(sectie=>{
-    const posturi=grupuri[sectie];
-    const posturiSortate=Object.keys(posturi).sort((a,b)=>a.localeCompare(b,'ro'));
-    const totSectie=posturiSortate.reduce((s,p)=>s+posturi[p].total,0);
-    const inactiviSectie=posturiSortate.reduce((s,p)=>s+posturi[p].co+posturi[p].inv+posturi[p].cfp+posturi[p].cm+posturi[p].ab,0);
+    const grupMap=grupuri[sectie];
+    const grupuriSortate=Object.keys(grupMap).sort((a,b)=>a.localeCompare(b,'ro'));
+    const totSectie=grupuriSortate.reduce((s,g)=>s+grupMap[g].total,0);
+    const inactiviSectie=grupuriSortate.reduce((s,g)=>s+grupMap[g].co+grupMap[g].inv+grupMap[g].cfp+grupMap[g].cm+grupMap[g].ab,0);
     const activiSectie=totSectie-inactiviSectie;
-    const pontatiSectie=posturiSortate.reduce((s,p)=>s+posturi[p].pontati,0);
+    const pontatiSectie=grupuriSortate.reduce((s,g)=>s+grupMap[g].pontati,0);
 
     html+=`<div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--navy);border-radius:8px 8px 0 0;gap:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--navy);border-radius:8px 8px 0 0;gap:8px">
         <span style="color:#fff;font-weight:700;font-size:13px">🏭 ${sectie}</span>
-        <span style="color:rgba(255,255,255,.7);font-size:11px;white-space:nowrap">${activiSectie} activi / ${totSectie} total &nbsp;·&nbsp; ${pontatiSectie} pontati</span>
+        <span style="color:rgba(255,255,255,.7);font-size:11px;white-space:nowrap">
+          <b style="color:#fff">${activiSectie}</b> activi &nbsp;/&nbsp; <b style="color:rgba(255,255,255,.55)">${totSectie}</b> total &nbsp;·&nbsp; <b style="color:#6ee7b7">${pontatiSectie}</b> pontati
+        </span>
       </div>
       <div style="border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;overflow:hidden">`;
 
-    posturiSortate.forEach((post,pi)=>{
-      const g=posturi[post];
+    grupuriSortate.forEach((grup,gi)=>{
+      const g=grupMap[grup];
       const inactivi=g.co+g.inv+g.cfp+g.cm+g.ab;
-      const activiPost=g.total-inactivi;
+      const activiGrup=g.total-inactivi;
       const barW=g.total?Math.round(g.pontati/g.total*100):0;
-      html+=`<div style="display:flex;align-items:center;gap:12px;padding:9px 14px;${pi>0?'border-top:1px solid var(--border)':''};background:var(--card)">
-        <div style="min-width:160px;flex-shrink:0">
-          <div style="font-size:13px;font-weight:600;color:var(--navy)">${post}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px">
-            <b>${g.total}</b> total &nbsp;·&nbsp;
-            <span style="color:var(--red)">${inactivi} inactivi</span> &nbsp;·&nbsp;
-            <span style="color:var(--navy)">${activiPost} activi</span>
+      html+=`<div style="display:flex;align-items:center;gap:12px;padding:9px 14px;${gi>0?'border-top:1px solid var(--border)':''};background:var(--card)">
+        <div style="min-width:150px;flex-shrink:0">
+          <div style="font-size:13px;font-weight:700;color:var(--navy);letter-spacing:.01em">${grup}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;display:flex;gap:6px">
+            <span><b style="color:var(--text)">${g.total}</b> total</span>
+            <span style="color:var(--red)">▼${inactivi} inactivi</span>
+            <span style="color:var(--green)">▲${activiGrup} activi</span>
           </div>
         </div>
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-            <div style="flex:1;height:8px;background:var(--bg);border-radius:6px;overflow:hidden">
-              <div style="height:100%;width:${barW}%;background:var(--green);border-radius:6px;transition:.3s"></div>
+            <div style="flex:1;height:7px;background:var(--bg);border-radius:6px;overflow:hidden">
+              <div style="height:100%;width:${barW}%;background:var(--green);border-radius:6px;transition:.4s"></div>
             </div>
-            <span style="font-size:11px;color:var(--green);font-weight:700;min-width:52px">${g.pontati} pontati</span>
+            <span style="font-size:11px;color:var(--green);font-weight:700;min-width:58px;text-align:right">${g.pontati} pontati</span>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:3px">
             ${pill(g.co,'CO','#dbeafe','#1d4ed8','Concediu odihna')}
