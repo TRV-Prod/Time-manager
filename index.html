@@ -2978,15 +2978,33 @@ async function handleProductieImportFile(ev){
     }
   }
 
-  // Upsert pe event_id în loturi de 500, pentru a evita duplicarea la reîncărcări repetate
-  // ale aceluiași fișier sau ale unor intervale de date care se suprapun.
+  // Determinăm intervalul de date acoperit de fișier
+  const datesInFile=records.map(r=>r.transaction_dt).filter(Boolean).sort();
+  const fileDataStart=datesInFile[0];
+  const fileDataEnd=datesInFile[datesInFile.length-1];
+
+  // Ștergem întâi toate înregistrările din perioada fișierului — astfel datele vechi
+  // corupte (salvate cu used_tm_movex_min=0 de versiuni anterioare) sunt eliminate complet,
+  // iar INSERT-ul următor aduce valori corecte recalculate.
+  statusEl.innerHTML=`<div class="alert alert-info">Se șterg datele existente pentru perioada ${fileDataStart} → ${fileDataEnd}...</div>`;
+  const {error:delErr}=await sb.from('productie_evenimente')
+    .delete()
+    .gte('transaction_dt',fileDataStart)
+    .lte('transaction_dt',fileDataEnd);
+  if(delErr){
+    statusEl.innerHTML=`<div class="alert alert-danger">Eroare la ștergerea datelor existente: ${delErr.message}</div>`;
+    toast('Import eșuat — eroare la ștergere','error');
+    return;
+  }
+
+  // INSERT curat în loturi de 500
   let okCount=0,errCount=0,lastError=null;
   const batchSize=500;
   for(let i=0;i<records.length;i+=batchSize){
     const batch=records.slice(i,i+batchSize);
     statusEl.innerHTML=`<div class="alert alert-info">Se salvează... ${Math.min(i+batchSize,records.length)}/${records.length}</div>`;
-    const {error}=await sb.from('productie_evenimente').upsert(batch,{onConflict:'event_id'});
-    if(error){errCount+=batch.length;lastError=error;console.error('Eroare upsert productie_evenimente:',error);}
+    const {error}=await sb.from('productie_evenimente').insert(batch);
+    if(error){errCount+=batch.length;lastError=error;console.error('Eroare insert productie_evenimente:',error);}
     else okCount+=batch.length;
   }
 
