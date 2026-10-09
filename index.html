@@ -2805,27 +2805,70 @@ let allProductieEv=[];
 // Parsează o dată tip "20260105" (YYYYMMDD ca text sau număr) în format ISO "2026-01-05"
 function parseExcelDateYYYYMMDD(v){
   if(!v) return null;
+  // Cu cellDates:false, raw:true, XLSX reda datele ca serial numeric (ex: 45678)
+  // sau ca string formatat (ex: "20231015" sau "2023-10-15" sau "15.10.2023")
+  if(typeof v==='number'){
+    // Conversia serial Excel → dată (Excel epoch: 1 ian 1900, cu bug-ul 1900=an bisect)
+    const epoch=new Date(Date.UTC(1899,11,30)); // 30 dec 1899
+    const d=new Date(epoch.getTime()+Math.round(v)*864e5);
+    if(isNaN(d)) return null;
+    const yr=d.getUTCFullYear(),mo=String(d.getUTCMonth()+1).padStart(2,'0'),dy=String(d.getUTCDate()).padStart(2,'0');
+    return `${yr}-${mo}-${dy}`;
+  }
   const s=String(v).trim();
-  if(s==='0'||s.length<8) return null;
-  return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+  if(!s||s==='0') return null;
+  // Format "YYYYMMDD" (8 cifre)
+  if(/^\d{8}$/.test(s)) return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+  // Format ISO "YYYY-MM-DD"
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // Format "DD.MM.YYYY"
+  if(/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return `${s.slice(6,10)}-${s.slice(3,5)}-${s.slice(0,2)}`;
+  return null;
 }
-// Parsează o oră tip "093954" (HHMMSS) în "09:39:54"; acceptă și obiecte Date/time din XLSX
+// Parsează o oră din fișierul Excel în format "HH:MM:SS".
+// Cu raw:true, XLSX poate reda: număr fracționar 0..1 (timp Excel), string "093954",
+// string "HH:MM:SS" sau string "HH:MM".
 function parseExcelTimeHHMMSS(v){
-  if(v==null) return null;
+  if(v==null||v==='') return null;
   if(v instanceof Date) return v.toTimeString().slice(0,8);
-  const s=String(v).trim().padStart(6,'0');
-  if(s==='000000') return null;
-  return `${s.slice(0,2)}:${s.slice(2,4)}:${s.slice(4,6)}`;
+  if(typeof v==='number'){
+    // fracție de zi Excel (0..1)
+    const totalSec=Math.round(v*86400);
+    const hh=Math.floor(totalSec/3600),mm=Math.floor((totalSec%3600)/60),ss=totalSec%60;
+    return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+  }
+  const s=String(v).trim();
+  if(!s||s==='0'||s==='000000') return null;
+  // string "HH:MM:SS" sau "HH:MM"
+  if(s.includes(':')) return s.length===5?s+':00':s.slice(0,8);
+  // string "HHMMSS" (6 cifre)
+  const p=s.padStart(6,'0');
+  return `${p.slice(0,2)}:${p.slice(2,4)}:${p.slice(4,6)}`;
 }
-// Convertește un obiect Date (XLSX poate citi celulele de tip time/duration ca Date la 1899/1900)
-// sau un string "HH:MM:SS" în minute (zecimale).
+// Convertește valoarea din celula Used_tm_movex în minute (număr).
+// Movex exportă Used_tm_movex ca număr de MINUTE (ex: 127 = 2h07min).
+// XLSX cu raw:true poate reda:
+//   - număr > 1  → minute directe (cel mai frecvent în Movex)
+//   - număr 0..1 → fracție de zi Excel time serial (ex: 0.0882 = 2h07min) — rar
+//   - string "H:MM:SS" sau "HH:MM:SS" → parsăm manual
+//   - obiect Date (doar când cellDates:true — nu mai e cazul)
 function timeCellToMinutes(v){
-  if(v==null) return 0;
+  if(v==null||v==='') return 0;
   if(v instanceof Date) return v.getHours()*60+v.getMinutes()+v.getSeconds()/60;
-  if(typeof v==='number') return v*24*60; // fracție de zi (format Excel time serial)
-  if(typeof v==='string'&&v.includes(':')){
-    const [h,m,s]=v.split(':').map(Number);
-    return (h||0)*60+(m||0)+((s||0)/60);
+  if(typeof v==='string'){
+    const s=v.trim();
+    if(s.includes(':')){
+      // format "H:MM", "H:MM:SS", "HH:MM:SS"
+      const parts=s.split(':').map(Number);
+      return (parts[0]||0)*60+(parts[1]||0)+((parts[2]||0)/60);
+    }
+    const n=parseFloat(s);
+    if(!isNaN(n)) return n>1?n:n*24*60;
+    return 0;
+  }
+  if(typeof v==='number'){
+    // Dacă >1 → sunt minute directe din Movex; dacă 0..1 → fracție de zi Excel
+    return v>1?v:v*24*60;
   }
   return 0;
 }
@@ -2853,9 +2896,12 @@ async function handleProductieImportFile(ev){
 
   statusEl.innerHTML='<div class="alert alert-info">Se citește fișierul...</div>';
   const buf=await file.arrayBuffer();
-  const wb=XLSX.read(buf,{type:'array',cellDates:true});
+  // Citim cu cellDates:false și raw:true pentru a prelua valorile exacte din celule.
+  // Used_tm_movex din Movex este un număr de minute (întreg sau zecimal) — dacă am folosi
+  // cellDates:true, SheetJS ar interpreta greșit numerele mici ca fracții de zi/dată.
+  const wb=XLSX.read(buf,{type:'array',cellDates:false,raw:true});
   const ws=wb.Sheets[wb.SheetNames[0]];
-  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
   if(rows.length<2){statusEl.innerHTML='<div class="alert alert-danger">Fișierul nu conține date (sub 2 rânduri).</div>';return;}
 
   // Mapăm coloanele după denumirea din header (rândul 1), nu după index fix, ca să fim
