@@ -2925,6 +2925,23 @@ async function handleProductieImportFile(ev){
     return;
   }
 
+  // ── DEBUG: afișăm primele 5 rânduri cu valorile raw din Used_tm_movex ──
+  {
+    const debugRows=rows.slice(1,6).filter(r=>r&&r[idx.usedTmMovex]!=null);
+    const debugInfo=debugRows.map((r,i)=>{
+      const raw=r[idx.usedTmMovex];
+      const tip=typeof raw;
+      const calc=timeCellToMinutes(raw);
+      return `Rd ${i+1}: val="${raw}" tip=${tip} → ${calc.toFixed(2)} min`;
+    }).join('<br>');
+    statusEl.innerHTML=`<div class="alert alert-warning" style="font-size:11px;font-family:monospace">
+      <b>DEBUG Used_tm_movex (primele 5 rânduri):</b><br>
+      Coloana găsită la index: ${idx.usedTmMovex} (header: "${header[idx.usedTmMovex]}")<br>
+      ${debugInfo||'— nicio valoare în primele 5 rânduri —'}
+    </div>`;
+    await new Promise(r=>setTimeout(r,100));
+  }
+
   statusEl.innerHTML=`<div class="alert alert-info">Se procesează ${rows.length-1} rânduri...</div>`;
 
   const mapAngajatByMatricol={};
