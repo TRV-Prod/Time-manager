@@ -2978,21 +2978,13 @@ async function handleProductieImportFile(ev){
     }
   }
 
-  // Determinăm intervalul de date acoperit de fișier
-  const datesInFile=records.map(r=>r.transaction_dt).filter(Boolean).sort();
-  const fileDataStart=datesInFile[0];
-  const fileDataEnd=datesInFile[datesInFile.length-1];
-
-  // Ștergem întâi toate înregistrările din perioada fișierului — astfel datele vechi
-  // corupte (salvate cu used_tm_movex_min=0 de versiuni anterioare) sunt eliminate complet,
-  // iar INSERT-ul următor aduce valori corecte recalculate.
-  statusEl.innerHTML=`<div class="alert alert-info">Se șterg datele existente pentru perioada ${fileDataStart} → ${fileDataEnd}...</div>`;
-  const {error:delErr}=await sb.from('productie_evenimente')
-    .delete()
-    .gte('transaction_dt',fileDataStart)
-    .lte('transaction_dt',fileDataEnd);
+  // Golim complet tabelul productie_evenimente înainte de fiecare import —
+  // astfel nu rămân niciodată date din importuri anterioare care ar putea fi incomplete sau corupte.
+  statusEl.innerHTML=`<div class="alert alert-info">Se golește tabelul de scanări (importuri anterioare)...</div>`;
+  // DELETE fără filtru șterge toate rândurile; folosim un filtru tautologic acceptat de PostgREST
+  const {error:delErr}=await sb.from('productie_evenimente').delete().gte('id','00000000-0000-0000-0000-000000000000');
   if(delErr){
-    statusEl.innerHTML=`<div class="alert alert-danger">Eroare la ștergerea datelor existente: ${delErr.message}</div>`;
+    statusEl.innerHTML=`<div class="alert alert-danger">Eroare la golirea tabelului: ${delErr.message}</div>`;
     toast('Import eșuat — eroare la ștergere','error');
     return;
   }
@@ -3164,26 +3156,26 @@ async function handlePontajImportFile(ev){
     return;
   }
 
-  // ── Ștergere + Insert grup cu grup (angajat + lună) ──
-  // Astfel evităm să ștergem date din luni sau angajați care nu sunt în fișier
+  // Golim complet tabelul pontaj înainte de fiecare import —
+  // astfel nu rămân niciodată date din importuri anterioare.
+  statusEl.innerHTML='<div class="alert alert-info">Se golește tabelul de pontaje (importuri anterioare)...</div>';
+  const {error:delPontErr}=await sb.from('pontaj').delete().gte('id','00000000-0000-0000-0000-000000000000');
+  if(delPontErr){
+    statusEl.innerHTML='<div class="alert alert-danger">Eroare la golirea tabelului pontaj: '+delPontErr.message+'</div>';
+    toast('Import eșuat — eroare la ștergere','error');
+    return;
+  }
+
+  // ── Insert curat toate rândurile ──
   let okCount=0,errCount=0;
   let processed=0;
-  for(const key of groupKeys){
-    const [aId,lunaIso]=key.split('|');
+  const allBatches=Object.values(recordsMap);
+  for(const batch of allBatches){
     processed++;
-    statusEl.innerHTML='<div class="alert alert-info">Se procesează '+processed+'/'+groupKeys.length+' combinații angajat-lună...</div>';
-
-    // Ștergem pontajul existent pentru acest angajat în această lună
-    await sb.from('pontaj').delete()
-      .eq('angajat_id',aId)
-      .gte('data',lunaIso+'-01')
-      .lte('data',lunaIso+'-31');
-
-    // Inserăm rândurile noi
-    const batch=recordsMap[key];
     if(!batch.length) continue;
+    statusEl.innerHTML='<div class="alert alert-info">Se salvează lotul '+processed+'/'+allBatches.length+'...</div>';
     const {error}=await sb.from('pontaj').insert(batch);
-    if(error){console.error('Eroare insert pontaj',key,error);errCount+=batch.length;}
+    if(error){console.error('Eroare insert pontaj',error);errCount+=batch.length;}
     else okCount+=batch.length;
   }
 
