@@ -2960,6 +2960,24 @@ async function handleProductieImportFile(ev){
     return;
   }
 
+  // Verificare rapidă: primele 3 valori used_tm_movex_min calculate
+  const sampleTimes=records.slice(0,5).filter(r=>r.used_tm_movex_min>0).slice(0,3);
+  console.log('[IMPORT] Sample used_tm_movex_min:', sampleTimes.map(r=>r.used_tm_movex_min));
+  if(sampleTimes.length===0){
+    // Toate 0 — afișăm ce a primit timeCellToMinutes pentru primul rând
+    const firstRow=rows.find((r,i)=>i>0&&r&&r[idx.usedTmMovex]!=null&&r[idx.usedTmMovex]!==0);
+    if(firstRow){
+      const raw=firstRow[idx.usedTmMovex];
+      statusEl.innerHTML=`<div class="alert alert-danger" style="font-size:11px;font-family:monospace">
+        <b>Eroare calcul Used_tm_movex!</b><br>
+        Valoare brută: ${JSON.stringify(raw)} (tip: ${typeof raw})<br>
+        Rezultat timeCellToMinutes: ${timeCellToMinutes(raw)}<br>
+        Verifică consola browserului pentru detalii.
+      </div>`;
+      return;
+    }
+  }
+
   // Upsert pe event_id în loturi de 500, pentru a evita duplicarea la reîncărcări repetate
   // ale aceluiași fișier sau ale unor intervale de date care se suprapun.
   let okCount=0,errCount=0,lastError=null;
