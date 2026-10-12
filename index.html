@@ -3481,9 +3481,21 @@ async function renderProductieRaport(){
   const wcSel=document.getElementById('prod-workcenter-sel').value;
   if(wcSel) q=q.eq('workcenter',wcSel);
 
-  const {data,error}=await q.order('transaction_dt',{ascending:false});
-  if(error){toast('Eroare la încărcarea raportului: '+error.message,'error');return;}
-  allProductieEv=data||[];
+  // Supabase returnează implicit max 1000 rânduri — facem paginare automată
+  // pentru a prelua toate înregistrările din perioada selectată.
+  let allRows=[];
+  const PAGE=1000;
+  let from=0;
+  while(true){
+    const {data:page,error}=await q.order('transaction_dt',{ascending:false}).range(from,from+PAGE-1);
+    if(error){toast('Eroare la încărcarea raportului: '+error.message,'error');return;}
+    if(!page||page.length===0) break;
+    allRows=allRows.concat(page);
+    if(page.length<PAGE) break; // ultima pagină
+    from+=PAGE;
+    console.log(`Paginare productie_evenimente: ${allRows.length} înregistrări încărcate până acum...`);
+  }
+  allProductieEv=allRows;
   // Actualizăm toți cei 3 selectori pe baza datelor noi (fără să resetăm cel care a declanșat)
   populeazaWorkcenterSelect();
   if(isAdmin()) prodActualizeazaSelectori('none');
@@ -3504,7 +3516,7 @@ async function renderProductieRaport(){
       pontQ=pontQ.eq('angajat_id',angSel);
     } else if(wcSel2){
       // Filtru pe workcenter: extragem angajat_id-urile unice din evenimentele deja filtrate
-      const idsFromWc=[...new Set((data||[]).map(r=>r.angajat_id).filter(Boolean))];
+      const idsFromWc=[...new Set((allRows||[]).map(r=>r.angajat_id).filter(Boolean))];
       pontQ=pontQ.in('angajat_id',idsFromWc.length?idsFromWc:['__none__']);
     } else if(sectSel2){
       // Filtru pe secție
