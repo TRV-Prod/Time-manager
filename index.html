@@ -3580,21 +3580,25 @@ function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataStart,dat
   }).join(''):`<tr><td colspan="${isAd?8:7}" style="text-align:center;color:var(--text3);padding:1.5rem">Nicio înregistrare găsită pentru perioada selectată.</td></tr>`;
 
   // Distribuim timpul pontat (din tabela pontaj, pe zile) în aceeași structură perZi
+  // Din fiecare zi de pontaj scădem 20 min pauza de masă → timp efectiv disponibil producție
+  const PAUZA_MIN=20;
   Object.entries(pontMapPerZi||{}).forEach(([zi,minute])=>{
     if(!perZi[zi]) perZi[zi]={normat:0,raportat:0,pontat:0};
-    perZi[zi].pontat=minute;
+    perZi[zi].pontat=Math.max(0,minute-PAUZA_MIN); // scădem pauza de masă
   });
 
   document.querySelectorAll('#page-productie thead .admin-only').forEach(el=>el.style.display=isAd?'':'none');
 
   const eficientaTotal=totalRaportat>0?(totalNormat/totalRaportat*100):0;
-  const totalPontatMin=(totalOrePontateH||0)*60;
+  // Timp pontat efectiv = total ore pontate - 20 min pauza/zi lucrată
+  const nrZileLucrate=Object.keys(pontMapPerZi||{}).length;
+  const totalPontatMin=Math.max(0,(totalOrePontateH||0)*60 - nrZileLucrate*PAUZA_MIN);
   document.getElementById('prod-summary').innerHTML=`
     ${statCard('Operații',rows.length,'var(--navy)','var(--navy-ll)','M9 11l3 3L22 4')}
     ${statCard('Cantitate totală',totalQty,'var(--orange)','var(--orange-l)','M12 20V10M18 20V4M6 20v-4')}
     ${statCard('Timp normat',fmtMinutes(totalNormat),'var(--slate)','var(--slate-ll)','M12 6v6l4 2')}
     ${statCard('Timp raportat',fmtMinutes(totalRaportat),'var(--amber)','var(--amber-l)','M12 6v6l4 2')}
-    ${statCard('Timp pontat',fmtMinutes(totalPontatMin),'var(--purple)','var(--purple-l)','M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z')}
+    ${statCard('Timp pontat (fără pauză)',fmtMinutes(totalPontatMin),'var(--purple)','var(--purple-l)','M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z')}
   `;
 
   // Propoziție-rezumat personalizată, doar când raportul e restrâns la un singur angajat
