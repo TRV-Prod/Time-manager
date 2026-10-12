@@ -5056,10 +5056,9 @@ async function evalExportPDF(evalId){
   });
 
   // Obținem logo-ul companiei dacă există
-  const logoUrl=currentOrg?.logo_url||null;
-  const orgInitiala=(currentOrg?.name||'T').charAt(0);
-  const logoHtml=logoUrl?`<img src="${logoUrl}" style="max-height:52px;max-width:140px;object-fit:contain" alt="Logo">`:`<div style="width:52px;height:52px;background:#1e3a5f;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:18px">${orgInitiala}</div>`;
-  const orgNume=currentOrg?.name||'SC TEAM INDUSTRIES ROMANIA SRL';
+  const orgNume='SC TEAM INDUSTRIES ROMANIA SRL';
+  const orgInitiala=orgNume.charAt(0);
+  const logoHtml=`<div style="width:52px;height:52px;background:#1e3a5f;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:18px">${orgInitiala}</div>`;
 
   const html=`<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
@@ -5226,8 +5225,24 @@ ${ev.observatii?`<div class="obs-box">${ev.observatii}</div>`:`<div class="obs-b
 <script>window.onload=function(){window.print();}<\/script>
 </body></html>`;
 
-  const w=window.open('','_blank');
-  if(w){w.document.write(html);w.document.close();}
+  // Folosim Blob URL — nu e blocat de popup blocker și nu depinde de document.write
+  try {
+    const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.target='_blank';
+    a.rel='noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+  } catch(e) {
+    // Fallback la window.open
+    const w=window.open('','_blank');
+    if(w){w.document.write(html);w.document.close();}
+    else toast('Popup blocat de browser. Permite popup-uri pentru această pagină.','warning');
+  }
 }
 
 // ─── ȘABLOANE ───────────────────────────────────
