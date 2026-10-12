@@ -4950,6 +4950,9 @@ async function evalExportPDF(evalId){
   const sab=ev.sablon_snapshot||allEvalSabloane.find(s=>s.id===ev.sablon_id);
   if(!ang||!sab){toast('Date lipsă pentru export','error');return;}
   const evaluator=allProfiles.find(p=>p.id===ev.evaluator_id);
+  // Funcția evaluatorului din organigrama
+  const evaluatorAngajat=evaluator?.angajat_id?allAngajati.find(a=>a.id===evaluator.angajat_id):null;
+  const evaluatorFunctie=evaluatorAngajat?.functie||evaluator?.functie||'Coordonator';
 
   const esteConductor=(sab.functie||'').toLowerCase().includes('conduc')||
     (sab.sectiuni||[]).some(s=>(s.titlu||'').toLowerCase().includes('manager')||
@@ -4975,16 +4978,21 @@ async function evalExportPDF(evalId){
     });
   });
 
-  function getCalificativ(total,max){
-    const pct=max>0?total/max:0;
-    if(total>=18||pct>=0.9) return 'FOARTE BINE';
-    if(total>=15||pct>=0.75) return 'BINE';
-    if(total>=10||pct>=0.5)  return 'MEDIU';
-    if(total>=6 ||pct>=0.3)  return 'SATISFACATOR';
-    if(total>=1)              return 'NESATISFACATOR';
+  // Praguri dinamice: FB=maxim-2, B=4*nrCriterii, M=3*nrCriterii, S=2*nrCriterii, N=1*nrCriterii
+  const pragFB = nrCriteriiNota>0 ? totalMax-2 : 18;
+  const pragB  = nrCriteriiNota>0 ? 4*nrCriteriiNota : 15;
+  const pragM  = nrCriteriiNota>0 ? 3*nrCriteriiNota : 10;
+  const pragS  = nrCriteriiNota>0 ? 2*nrCriteriiNota : 6;
+  const pragN  = nrCriteriiNota>0 ? 1*nrCriteriiNota : 1;
+  function getCalificativ(total){
+    if(total>=pragFB) return 'FOARTE BINE';
+    if(total>=pragB)  return 'BINE';
+    if(total>=pragM)  return 'MEDIU';
+    if(total>=pragS)  return 'SATISFACATOR';
+    if(total>=pragN)  return 'NESATISFACATOR';
     return '—';
   }
-  const calificativ=nrCriteriiNota>0?getCalificativ(totalPct,totalMax):'—';
+  const calificativ=nrCriteriiNota>0?getCalificativ(totalPct):'—';
   const calColors={'FOARTE BINE':'#059669','BINE':'#16a34a','MEDIU':'#d97706','SATISFACATOR':'#ea580c','NESATISFACATOR':'#dc2626','—':'#64748b'};
   const calColor=calColors[calificativ]||'#64748b';
 
@@ -5055,66 +5063,75 @@ async function evalExportPDF(evalId){
     });
   });
 
-  // Obținem logo-ul companiei dacă există
   const orgNume='SC TEAM INDUSTRIES ROMANIA SRL';
-  const orgInitiala=orgNume.charAt(0);
-  const logoHtml=`<div style="width:52px;height:52px;background:#1e3a5f;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:18px">${orgInitiala}</div>`;
+  const LOGO_B64='data:image/png;base64,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';
+  const logoHtml=`<img src="${LOGO_B64}" style="max-height:50px;max-width:140px;object-fit:contain" alt="Team Industries">`;
+
+  // Data semnarii formatata
+  const dataSemnariiStr=ev.semnat_la
+    ?new Date(ev.semnat_la).toLocaleDateString('ro-RO')
+    :new Date().toLocaleDateString('ro-RO');
 
   const html=`<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <title>Fisa Evaluare - ${angajatNume}</title>
 <style>
   * { box-sizing: border-box; }
-  body { font-family: Arial, sans-serif; margin: 0; padding: 20px 24px; color: #000; font-size: 12px; }
-  @page { size: A4; margin: 12mm 14mm; }
+  body { font-family: Arial, sans-serif; margin: 0; padding: 16px 20px; color: #000; font-size: 12px; }
+  @page { size: A4; margin: 10mm 12mm; }
   @media print { body { padding: 0; } .no-print { display: none !important; } }
-  .header-firma { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 3px solid #1e3a5f; }
-  .header-firma-info { flex: 1; }
-  .header-firma-info .name { font-size: 14px; font-weight: 800; color: #1e3a5f; text-transform: uppercase; letter-spacing: .5px; }
-  .header-firma-info .sub { font-size: 10px; color: #64748b; }
-  .titlu-fisier { text-align: center; margin: 10px 0 14px; }
-  .titlu-fisier h1 { font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 2px; color: #1e3a5f; }
-  .titlu-fisier h2 { font-size: 11.5px; font-weight: 400; color: #475569; margin: 0; }
-  .antet-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; border: 2px solid #1e3a5f; }
+  /* Antet document */
+  .doc-header { width: 100%; border-collapse: collapse; margin-bottom: 12px; border: 1px solid #1e3a5f; }
+  .doc-header td { padding: 4px 8px; border: 1px solid #1e3a5f; vertical-align: middle; }
+  .doc-header .logo-cell { width: 110px; text-align: center; border-right: 1px solid #1e3a5f; }
+  .doc-header .title-cell { font-size: 11px; }
+  .doc-header .code-cell { width: 160px; text-align: right; font-size: 10px; color: #475569; border-left: 1px solid #1e3a5f; }
+  .doc-title-main { font-size: 12px; font-weight: 900; text-transform: uppercase; color: #1e3a5f; }
+  .doc-title-sub { font-size: 10.5px; color: #374151; margin-top: 2px; }
+  /* Tabele */
+  .antet-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; border: 2px solid #1e3a5f; }
   .antet-table .header-cell { background: #1e3a5f; color: #fff; font-weight: bold; padding: 5px 10px; font-size: 11.5px; }
   .antet-table .field-row { padding: 4px 10px; border-top: 1px solid #e2e8f0; font-size: 11.5px; }
   .antet-table .field-row b { display: inline-block; min-width: 120px; }
-  .criterii-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 11.5px; }
+  .criterii-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 11.5px; }
   .criterii-table th { background: #1e3a5f; color: #fff; padding: 6px 5px; font-size: 11px; border: 1px solid #1e3a5f; text-align: center; }
   .criterii-table th.th-criteriu { text-align: left; padding-left: 8px; }
-  .rezultate-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 11px; }
+  .rezultate-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 11px; }
   .rezultate-table th { background: #334155; color: #fff; padding: 5px 8px; font-size: 11px; border: 1px solid #334155; }
-  .calificativ-section { border: 2px solid #1e3a5f; padding: 10px 14px; margin-bottom: 14px; }
-  .calificativ-section p { margin: 3px 0; font-size: 11px; }
+  .calificativ-section { border: 2px solid #1e3a5f; padding: 8px 12px; margin-bottom: 12px; }
+  .calificativ-section p { margin: 2px 0; font-size: 10.5px; }
   .result-box { margin-top: 8px; font-size: 13px; font-weight: bold; }
   .result-val { display: inline-block; padding: 3px 14px; border: 2px solid currentColor; border-radius: 4px; }
-  .semnaturi-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  .semnaturi-table { width: 100%; border-collapse: collapse; margin-top: 14px; }
   .semnaturi-table td { padding: 5px 8px; border: 1px solid #cbd5e1; vertical-align: top; text-align: center; font-size: 10.5px; }
   .semnaturi-table .header-s { background: #f1f5f9; font-weight: bold; font-size: 11px; }
-  .semn-spatiu { height: 40px; }
-  .obs-box { border: 1px solid #cbd5e1; padding: 8px 12px; margin-bottom: 12px; min-height: 36px; font-size: 11.5px; white-space: pre-wrap; }
+  .semn-spatiu { height: 38px; }
+  .obs-box { border: 1px solid #cbd5e1; padding: 8px 12px; margin-bottom: 10px; min-height: 36px; font-size: 11.5px; white-space: pre-wrap; }
   .section-title { font-size: 11.5px; font-weight: 700; margin-bottom: 5px; color: #1e3a5f; }
 </style>
 </head><body>
 
-<!-- ANTET FIRMĂ -->
-<div class="header-firma">
-  ${logoHtml}
-  <div class="header-firma-info">
-    <div class="name">${orgNume}</div>
-    <div class="sub">Document intern · Resurse Umane</div>
-  </div>
-  <div style="text-align:right;font-size:10px;color:#94a3b8">
-    <div>Data generării</div>
-    <div style="font-weight:600;color:#475569">${new Date().toLocaleDateString('ro-RO')}</div>
-  </div>
-</div>
-
-<!-- TITLU FORMULAR -->
-<div class="titlu-fisier">
-  <h1>Fișa de evaluare — funcții ${esteConductor?'conducere':'execuție'}</h1>
-  <h2>${sab.nume||'Evaluare anuală'}</h2>
-</div>
+<!-- ANTET DOCUMENT — format formular fizic -->
+<table class="doc-header">
+  <tr>
+    <td class="logo-cell" rowspan="2">${logoHtml}</td>
+    <td class="title-cell">
+      <div class="doc-title-main">FISA EVALUARE a performantelor profesionale individuale</div>
+    </td>
+    <td class="code-cell">Cod: F 7.2/7.3-03A</td>
+  </tr>
+  <tr>
+    <td class="title-cell">
+      <div class="doc-title-sub">Fisa evaluare pentru angajatii cu functii de <b>${esteConductor?'CONDUCERE':'EXECUTIE'}</b></div>
+    </td>
+    <td class="code-cell">Ed. 4, rev. 0</td>
+  </tr>
+  <tr>
+    <td class="logo-cell" style="font-size:9px;color:#64748b;text-align:center">${orgNume}</td>
+    <td class="title-cell" style="font-size:10px">Data: <b>${dataSemnariiStr}</b></td>
+    <td class="code-cell" style="font-size:10px">Pagina <span id="pgnr">1</span> din <span id="pgct">1</span></td>
+  </tr>
+</table>
 
 <!-- ANTET: date persoana evaluata | date evaluator -->
 <table class="antet-table">
@@ -5132,7 +5149,7 @@ async function evalExportPDF(evalId){
     <td style="padding:0;vertical-align:top">
       <div class="field-row"><b>Nume :</b> ${evaluatorNume}</div>
       <div class="field-row"><b>Nr. marca :</b> &nbsp;</div>
-      <div class="field-row"><b>Functia :</b> ${evaluator?.functie||'Coordonator'}</div>
+      <div class="field-row"><b>Functia :</b> ${evaluatorFunctie}</div>
       <div class="field-row">&nbsp;</div>
     </td>
   </tr>
@@ -5181,11 +5198,11 @@ ${rezultateRows?`<div class="section-title">Rezultate pe criterii</div>
 <div class="calificativ-section">
   <p><b>Se calculează nota finală, prin adunarea notelor de la toate criteriile.</b></p>
   <p><b>Calificativul final al evaluării se stabilește pe baza notei finale, după cum urmează:</b></p>
-  <p>a) între 1 și 5 (inclusiv) — <b>NESATISFACATOR</b></p>
-  <p>b) între 6 (inclusiv) și 10 — <b>SATISFACATOR</b></p>
-  <p>c) între 10 (inclusiv) și 15 — <b>MEDIU</b></p>
-  <p>d) între 15 (inclusiv) și 18 — <b>BINE</b></p>
-  <p>e) între 18 (inclusiv) și 20 — <b>FOARTE BINE</b></p>
+  <p>a) de la ${pragN} la ${pragS-1} (inclusiv) — <b>NESATISFACATOR</b></p>
+  <p>b) de la ${pragS} la ${pragM-1} (inclusiv) — <b>SATISFACATOR</b></p>
+  <p>c) de la ${pragM} la ${pragB-1} (inclusiv) — <b>MEDIU</b></p>
+  <p>d) de la ${pragB} la ${pragFB-1} (inclusiv) — <b>BINE</b></p>
+  <p>e) de la ${pragFB} la ${totalMax} (inclusiv) — <b>FOARTE BINE</b></p>
   ${nrCriteriiNota>0?`<div class="result-box">Notă finală: <b style="color:${calColor}">${totalPct} / ${totalMax} puncte</b> &nbsp;→&nbsp; <span class="result-val" style="color:${calColor}">${calificativ}</span></div>`:''}
 </div>
 
@@ -5222,7 +5239,15 @@ ${ev.observatii?`<div class="obs-box">${ev.observatii}</div>`:`<div class="obs-b
   Generat: ${new Date().toLocaleDateString('ro-RO')} · ${orgNume} · Pontaj Pro
 </div>
 
-<script>window.onload=function(){window.print();}<\/script>
+<script>
+window.onload=function(){
+  // Paginare dinamică via CSS counter
+  var style=document.createElement('style');
+  style.textContent='body{counter-reset:pg;}@page{}.page-break{counter-increment:pg;}';
+  document.head.appendChild(style);
+  window.print();
+};
+<\/script>
 </body></html>`;
 
   // Folosim Blob URL — nu e blocat de popup blocker și nu depinde de document.write
