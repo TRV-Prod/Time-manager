@@ -4882,75 +4882,252 @@ async function evalSterge(evalId){
 async function evalExportPDF(evalId){
   let ev=allEvaluari.find(e=>e.id===evalId);
   if(!ev){
-    // fallback: fetch din Supabase
     const {data}=await sb.from('evaluari').select('*').eq('id',evalId).single();
     ev=data;
   }
   if(!ev){toast('Evaluare negăsită','error');return;}
   const ang=allAngajati.find(a=>a.id===ev.angajat_id);
-  const sab=allEvalSabloane.find(s=>s.id===ev.sablon_id)||ev.sablon_snapshot;
+  const sab=ev.sablon_snapshot||allEvalSabloane.find(s=>s.id===ev.sablon_id);
   if(!ang||!sab){toast('Date lipsă pentru export','error');return;}
   const evaluator=allProfiles.find(p=>p.id===ev.evaluator_id);
   const semnatar=ev.semnat_de?allProfiles.find(p=>p.id===ev.semnat_de):null;
-  const tipCulori={general:'#1e3a5f',conduita:'#6d28d9',profesionala:'#059669'};
-  const tipLabel={general:'Secțiune Generală',conduita:'Conduită',profesionala:'Profesională'};
-  const stele=n=>n?'★'.repeat(n)+'☆'.repeat(5-n):'—';
-  const scor=ev.scor_general!=null?Number(ev.scor_general).toFixed(2):null;
-  const notaColor=scor?(Number(scor)>=4?'#059669':Number(scor)>=3?'#d97706':'#dc2626'):'#64748b';
 
-  let sectHTML='';
+  // Determină dacă e formular de conducere sau execuție
+  // (după tipul secțiunilor sau funcție)
+  const esteConductor=(sab.functie||'').toLowerCase().includes('conduc')||
+    (sab.sectiuni||[]).some(s=>(s.titlu||'').toLowerCase().includes('manager')||
+      (s.titlu||'').toLowerCase().includes('decizi'));
+
+  // Calculează scorul total și calificativul final (max 20 pct = 4 criterii x 5 pct)
+  let totalPct=0;
+  let nrCriteriiNota=0;
   (sab.sectiuni||[]).forEach((sect,si)=>{
-    const col=tipCulori[sect.tip]||'#334155';
-    sectHTML+=`<div style="margin-bottom:20px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
-      <div style="background:${col};color:#fff;padding:10px 16px;font-weight:700;font-size:13px">${tipLabel[sect.tip]||sect.tip}: ${sect.titlu}</div>
-      <table style="width:100%;border-collapse:collapse">`;
+    (sect.criterii||[]).forEach((cr,ci)=>{
+      if(cr.tip==='nota1-5'){
+        const val=ev.raspunsuri?.[`${si}_${ci}`];
+        if(val!=null){totalPct+=Number(val);nrCriteriiNota++;}
+      }
+    });
+  });
+  // Calificativ final conform documentului (max 20 pct = 4 criterii x 5)
+  function getCalificativ(total){
+    if(total>=18) return 'FOARTE BINE';
+    if(total>=15) return 'BINE';
+    if(total>=10) return 'MEDIU';
+    if(total>=6)  return 'SATISFACATOR';
+    if(total>=1)  return 'NESATISFACATOR';
+    return '—';
+  }
+  const calificativ=nrCriteriiNota>0?getCalificativ(totalPct):'—';
+  const calColors={'FOARTE BINE':'#059669','BINE':'#16a34a','MEDIU':'#d97706','SATISFACATOR':'#ea580c','NESATISFACATOR':'#dc2626','—':'#64748b'};
+  const calColor=calColors[calificativ]||'#64748b';
+
+  // Niveluri de apreciere pentru criterii nota 1-5 (din documentul model)
+  // Funcții execuție vs conducere au etichete ușor diferite
+  function niveluriApreciere(valSelectata, tipSectiune){
+    const nivExec=[
+      {min:4,max:5,label:'Total implicat',desc:'depășește așteptările'},
+      {min:3,max:4,label:'Implicat',desc:'îndeplinește întotdeauna așteptările'},
+      {min:2,max:3,label:'În majoritatea cazurilor implicat',desc:'îndeplinește majoritatea așteptărilor dar e loc de îmbunătățiri'},
+      {min:1,max:2,label:'Parțial implicat',desc:'îndeplinește așteptările, dar nu întotdeauna'},
+      {min:0,max:1,label:'Ocazional implicat',desc:'rar îndeplinește așteptările'},
+    ];
+    const nivProf=[
+      {min:4,max:5,label:'Specializat',desc:'depășește așteptările'},
+      {min:3,max:4,label:'Experimentat',desc:'îndeplinește întotdeauna așteptările'},
+      {min:2,max:3,label:'Familiarizat',desc:'îndeplinește majoritatea așteptărilor dar e loc de îmbunătățiri'},
+      {min:1,max:2,label:'Neexperimentat',desc:'îndeplinește așteptările în cele mai multe cazuri'},
+      {min:0,max:1,label:'Total neexperimentat',desc:'îndeplinește așteptările doar în anumite cazuri'},
+    ];
+    const nivEfic=[
+      {min:4,max:5,label:'Total eficient',desc:'depășește așteptările'},
+      {min:3,max:4,label:'Eficient',desc:'îndeplinește întotdeauna așteptările'},
+      {min:2,max:3,label:'În majoritatea cazurilor eficient',desc:'îndeplinește majoritatea așteptărilor dar e loc de îmbunătățiri'},
+      {min:1,max:2,label:'Parțial eficient',desc:'îndeplinește așteptările, dar nu întotdeauna'},
+      {min:0,max:1,label:'Ocazional eficient',desc:'rar îndeplinește așteptările'},
+    ];
+    // Selectează setul de niveluri după tipul secțiunii
+    const tipLC=(tipSectiune||'').toLowerCase();
+    let nivele;
+    if(tipLC==='profesionala') nivele=nivProf;
+    else if(tipLC==='conduita') nivele=nivExec;
+    else nivele=nivEfic; // general / conducere
+    return nivele.map(n=>{
+      const selectat=(valSelectata!=null)&&(valSelectata>n.min-1)&&(valSelectata<=n.max);
+      // Marcăm nivelul selectat
+      return `<tr style="background:${selectat?'#fef9c3':'transparent'}">
+        <td style="padding:4px 8px;border:1px solid #cbd5e1;font-size:11px;width:28px;text-align:center">
+          ${selectat?`<span style="font-size:14px">☑</span>`:`<span style="font-size:14px;color:#94a3b8">☐</span>`}
+        </td>
+        <td style="padding:4px 8px;border:1px solid #cbd5e1;font-size:11px">
+          <b>Între ${n.min==0?0:n.min} și ${n.max} puncte</b> — <b>${n.label}</b> — ${n.desc}
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Generare rânduri tabel criterii
+  let criteriiRows='';
+  (sab.sectiuni||[]).forEach((sect,si)=>{
+    // Rând antet secțiune
+    criteriiRows+=`<tr>
+      <td colspan="3" style="padding:7px 10px;background:#1e3a5f;color:#fff;font-weight:bold;font-size:12px;border:1px solid #1e3a5f">
+        ${sect.titlu||sect.tip}
+      </td>
+    </tr>`;
     (sect.criterii||[]).forEach((cr,ci)=>{
       const key=`${si}_${ci}`;
       const val=ev.raspunsuri?.[key];
-      const afisaj=cr.tip==='nota1-5'?(val!=null?`<span style="color:${val>=4?'#059669':val>=3?'#d97706':'#dc2626'};font-weight:700">${val}/5 ${stele(val)}</span>`:'—'):val||'—';
-      const bg=ci%2===0?'#f8fafc':'#fff';
-      sectHTML+=`<tr style="background:${bg}">
-        <td style="padding:9px 16px;border-bottom:1px solid #e2e8f0;font-size:12px;width:55%;vertical-align:top">${cr.text}</td>
-        <td style="padding:9px 16px;border-bottom:1px solid #e2e8f0;font-size:12px">${afisaj}</td>
-      </tr>`;
+      const comentariu=ev.raspunsuri?.[`${key}_c`]||'';
+      if(cr.tip==='nota1-5'){
+        criteriiRows+=`<tr>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;vertical-align:top;width:32%;font-size:12px">
+            <b>${cr.text}</b>
+          </td>
+          <td style="padding:4px 6px;border:1px solid #cbd5e1;vertical-align:top;width:44%">
+            <table style="width:100%;border-collapse:collapse">
+              ${niveluriApreciere(val,sect.tip)}
+            </table>
+            ${val!=null?`<div style="margin-top:4px;font-size:11px;color:#64748b;text-align:right">Punctaj acordat: <b>${val}/5</b></div>`:''}
+          </td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;vertical-align:top;width:24%;font-size:11px;color:#475569">
+            ${comentariu||'&nbsp;'}
+          </td>
+        </tr>`;
+      } else {
+        // Răspuns text
+        criteriiRows+=`<tr>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;vertical-align:top;width:32%;font-size:12px"><b>${cr.text}</b></td>
+          <td colspan="2" style="padding:8px 10px;border:1px solid #cbd5e1;vertical-align:top;font-size:12px">${val||'&nbsp;'}</td>
+        </tr>`;
+      }
     });
-    sectHTML+=`</table></div>`;
   });
 
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Evaluare ${angNume(ang)}</title>
-  <style>body{font-family:Arial,sans-serif;margin:0;padding:32px;color:#1e293b;max-width:800px;margin:auto}
-  h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;color:#64748b;margin:0 0 20px;font-weight:400}
-  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e2e8f0}
-  .logo{font-size:11px;color:#94a3b8;text-align:right}
-  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:24px}
-  .info-box{background:#f8fafc;padding:12px;border-radius:6px}
-  .info-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
-  .info-val{font-size:13px;font-weight:600}
-  .scor-box{background:#f0fdf4;border:2px solid #86efac;border-radius:8px;padding:16px;text-align:center;margin-bottom:20px}
-  .obs{background:#f8fafc;padding:12px 16px;border-radius:8px;font-size:12px;color:#475569;margin-bottom:20px;white-space:pre-wrap}
-  .sign{display:flex;justify-content:space-between;margin-top:32px;padding-top:16px;border-top:2px solid #e2e8f0;font-size:11px;color:#94a3b8}
-  @media print{body{padding:16px}}</style></head><body>
-  <div class="header">
-    <div><h1>Raport de Evaluare</h1><h2>${sab.nume}</h2></div>
-    <div class="logo">SC TEAM INDUSTRIES ROMANIA<br>Evaluare personal</div>
-  </div>
-  <div class="info-grid">
-    <div class="info-box"><div class="info-label">Angajat evaluat</div><div class="info-val">${angNume(ang)}</div></div>
-    <div class="info-box"><div class="info-label">Funcție</div><div class="info-val">${ang.functie||'—'}</div></div>
-    <div class="info-box"><div class="info-label">Data evaluării</div><div class="info-val">${fmtDate(ev.data_evaluarii)}</div></div>
-    <div class="info-box"><div class="info-label">Evaluator</div><div class="info-val">${evaluator?.full_name||evaluator?.username||'—'}</div></div>
-  </div>
-  ${scor!=null?`<div class="scor-box"><div style="font-size:11px;color:#059669;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Scor general</div>
-    <div style="font-size:36px;font-weight:800;color:${notaColor}">${scor}<span style="font-size:16px;color:#94a3b8">/5</span></div>
-    <div style="font-size:13px;color:#64748b">${stele(Math.round(Number(scor)))}</div></div>`:''}
-  ${sectHTML}
-  ${ev.observatii?`<div style="margin-bottom:4px;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748b">Observații</div><div class="obs">${ev.observatii}</div>`:''}
-  <div class="sign">
-    <div>Evaluator: <b>${evaluator?.full_name||evaluator?.username||'—'}</b><br>${ev.status==='semnat'?'✓ Semnat digital':''}</div>
-    ${ev.status==='semnat'&&semnatar?`<div style="text-align:right">Semnat de: <b>${semnatar.full_name||semnatar.username}</b><br>${ev.semnat_la?fmtDate(ev.semnat_la.split('T')[0]):''}</div>`:''}
-  </div>
-  <script>window.onload=function(){window.print();}<\/script>
-  </body></html>`;
+  const evaluatorNume=evaluator?.full_name||evaluator?.username||'—';
+  const angajatNume=angNume(ang);
+  const perioadaEval=ev.data_evaluarii?(()=>{const d=new Date(ev.data_evaluarii);return d.getFullYear();})():'2025';
+
+  const html=`<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Fisa Evaluare - ${angajatNume}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; margin: 0; padding: 24px; color: #000; font-size: 12px; }
+  @page { size: A4; margin: 18mm 15mm; }
+  @media print { body { padding: 0; } .no-print { display: none; } }
+  h1 { font-size: 15px; text-align: center; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 1px; }
+  h2 { font-size: 12px; text-align: center; margin: 0 0 16px; color: #444; font-weight: normal; }
+  .antet-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; border: 2px solid #1e3a5f; }
+  .antet-table td { padding: 7px 12px; vertical-align: top; font-size: 12px; }
+  .antet-table .col-left { width: 50%; border-right: 2px solid #1e3a5f; }
+  .antet-table .col-right { width: 50%; }
+  .antet-table .header-cell { background: #1e3a5f; color: #fff; font-weight: bold; padding: 6px 12px; font-size: 12px; }
+  .antet-table .field-row { padding: 5px 12px; border-top: 1px solid #d1d5db; font-size: 12px; }
+  .antet-table .field-row b { display: inline-block; min-width: 130px; }
+  .criterii-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  .criterii-table th { background: #1e3a5f; color: #fff; padding: 8px 10px; font-size: 12px; border: 1px solid #1e3a5f; text-align: left; }
+  .calificativ-section { border: 2px solid #1e3a5f; padding: 12px 16px; margin-bottom: 16px; }
+  .calificativ-section p { margin: 4px 0; font-size: 11.5px; }
+  .result-box { margin-top: 10px; font-size: 13px; font-weight: bold; }
+  .result-val { display: inline-block; padding: 4px 14px; border: 2px solid currentColor; border-radius: 4px; color: ${calColor}; }
+  .semnaturi-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+  .semnaturi-table td { padding: 6px 10px; border: 1px solid #cbd5e1; vertical-align: top; text-align: center; font-size: 11px; min-height: 50px; }
+  .semnaturi-table .header-s { background: #f1f5f9; font-weight: bold; font-size: 11px; }
+  .semn-spatiu { height: 44px; }
+  .obs-box { border: 1px solid #cbd5e1; padding: 10px 14px; margin-bottom: 14px; min-height: 40px; font-size: 12px; white-space: pre-wrap; }
+  .separator { border: none; border-top: 2px solid #1e3a5f; margin: 16px 0; }
+</style>
+</head><body>
+
+<h1>Fișa de evaluare — funcții ${esteConductor?'conducere':'execuție'}</h1>
+<h2>${sab.nume||'Evaluare anuală'}</h2>
+
+<!-- ANTET: date persoana evaluata | date evaluator -->
+<table class="antet-table">
+  <tr>
+    <td class="header-cell col-left">Date persoana evaluata</td>
+    <td class="header-cell col-right">Date evaluator / sef direct</td>
+  </tr>
+  <tr>
+    <td class="col-left" style="padding:0;border-right:2px solid #1e3a5f">
+      <div class="field-row"><b>Nume :</b> ${angajatNume}</div>
+      <div class="field-row"><b>Nr. marca :</b> ${ang.nr_marca||'—'}</div>
+      <div class="field-row"><b>Functia :</b> ${ang.functie||'—'}</div>
+      <div class="field-row"><b>Perioada evaluata:</b> ${perioadaEval}</div>
+    </td>
+    <td class="col-right" style="padding:0">
+      <div class="field-row"><b>Nume :</b> ${evaluatorNume}</div>
+      <div class="field-row"><b>Nr. marca :</b> &nbsp;</div>
+      <div class="field-row"><b>Functia :</b> ${evaluator?.functie||'Coordonator'}</div>
+      <div class="field-row">&nbsp;</div>
+    </td>
+  </tr>
+</table>
+
+<!-- TABEL CRITERII -->
+<table class="criterii-table">
+  <thead>
+    <tr>
+      <th style="width:32%">Criterii Evaluare</th>
+      <th style="width:44%">Apreciere</th>
+      <th style="width:24%">Comentariu evaluator</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${criteriiRows}
+  </tbody>
+</table>
+
+<!-- CALIFICATIV FINAL -->
+<div class="calificativ-section">
+  <p><b>Se calculează nota finală, prin adunarea notelor de la toate criteriile.</b></p>
+  <p><b>Calificativul final al evaluării se stabilește pe baza notei finale, după cum urmează:</b></p>
+  <p>a) între 1 și 5 (inclusiv) — <b>NESATISFACATOR</b></p>
+  <p>b) între 6 (inclusiv) și 10 — <b>SATISFACATOR</b></p>
+  <p>c) între 10 (inclusiv) și 15 — <b>MEDIU</b></p>
+  <p>d) între 15 (inclusiv) și 18 — <b>BINE</b></p>
+  <p>e) între 18 (inclusiv) și 20 — <b>FOARTE BINE</b></p>
+  ${nrCriteriiNota>0?`<div class="result-box">Notă finală: <b>${totalPct} / 20 puncte</b> &nbsp;→&nbsp; <span class="result-val">${calificativ}</span></div>`:''}
+</div>
+
+${ev.observatii?`<div style="margin-bottom:6px;font-weight:bold;font-size:12px">Propuneri făcute de șeful direct/evaluator:</div>
+<div class="obs-box">${ev.observatii}</div>`:`<div style="margin-bottom:6px;font-weight:bold;font-size:12px">Propuneri făcute de șeful direct/evaluator:</div>
+<div class="obs-box" style="min-height:60px">&nbsp;</div>`}
+
+<div style="margin-bottom:4px;font-size:11px">Rezultatul evaluarii: <b style="color:${calColor}">${nrCriteriiNota>0?calificativ:'__________________________'}</b></div>
+
+<!-- SEMNATURI -->
+<table class="semnaturi-table">
+  <tr>
+    <td class="header-s" style="width:40%">Semnatura Șefului direct / evaluator</td>
+    <td class="header-s" style="width:40%">Semnatura Angajatului</td>
+    <td class="header-s" style="width:20%">Administrator / Director</td>
+  </tr>
+  <tr>
+    <td>
+      <div class="semn-spatiu"></div>
+      <div>${evaluatorNume}</div>
+      ${ev.status==='semnat'?`<div style="color:#059669;font-size:10px">✓ Semnat digital${ev.semnat_la?' — '+fmtDate(ev.semnat_la.split('T')[0]):''}</div>`:''}
+    </td>
+    <td>
+      <div class="semn-spatiu"></div>
+      <div>${angajatNume}</div>
+    </td>
+    <td>
+      <div class="semn-spatiu"></div>
+      <div>&nbsp;</div>
+    </td>
+  </tr>
+</table>
+
+<div style="margin-top:12px;font-size:10px;color:#94a3b8;text-align:right">
+  Generat: ${new Date().toLocaleDateString('ro-RO')} · SC TEAM INDUSTRIES ROMANIA · Pontaj Pro
+</div>
+
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`;
+
   const w=window.open('','_blank');
   if(w){w.document.write(html);w.document.close();}
 }
