@@ -352,6 +352,9 @@ tr:hover td{background:var(--slate-ll)}
         <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Producție
       </div>
       <div class="sidebar-section" id="nav-section-admin" style="display:none">Administrare</div>
+      <div class="nav-item" data-page="evaluari" onclick="showPage('evaluari')" id="nav-evaluari" style="display:none">
+        <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Evaluări
+      </div>
       <div class="nav-item" data-page="angajati" onclick="showPage('angajati')" id="nav-angajati" style="display:none">
         <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Angajați
       </div>
@@ -449,6 +452,64 @@ tr:hover td{background:var(--slate-ll)}
           </div>
         </div>
         <div id="invoiri-list"></div>
+      </div>
+
+      <!-- EVALUĂRI -->
+      <div class="page" id="page-evaluari">
+        <!-- Sub-tabs: Evaluări noi / Istoric / Șabloane -->
+        <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
+          <button class="btn" id="eval-tab-nou" onclick="evalShowTab('nou')" style="background:var(--orange);color:#fff">+ Evaluare nouă</button>
+          <button class="btn btn-sm" id="eval-tab-istoric" onclick="evalShowTab('istoric')">Istoric evaluări</button>
+          <button class="btn btn-sm" id="eval-tab-sabloane" onclick="evalShowTab('sabloane')">Șabloane</button>
+        </div>
+
+        <!-- TAB: Evaluare nouă -->
+        <div id="eval-panel-nou">
+          <div class="card" style="margin-bottom:1rem">
+            <div class="card-title">Evaluare nouă</div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-group" style="margin:0;min-width:200px">
+                <label class="form-label">Angajat evaluat</label>
+                <select id="eval-angajat-sel" class="form-control" onchange="evalOnAngajatChange()"><option value="">— selectează —</option></select>
+              </div>
+              <div class="form-group" style="margin:0;min-width:200px">
+                <label class="form-label">Șablon evaluare</label>
+                <select id="eval-sablon-sel" class="form-control" onchange="evalOnSablonChange()"><option value="">— selectează șablon —</option></select>
+              </div>
+              <div class="form-group" style="margin:0;min-width:140px">
+                <label class="form-label">Data evaluării</label>
+                <input type="date" id="eval-data" class="form-control" />
+              </div>
+              <button class="btn" onclick="evalStartForm()" style="background:var(--navy);color:#fff;margin-bottom:0">Deschide formular</button>
+            </div>
+          </div>
+          <div id="eval-form-container"></div>
+        </div>
+
+        <!-- TAB: Istoric -->
+        <div id="eval-panel-istoric" style="display:none">
+          <div class="card" style="margin-bottom:1rem">
+            <div class="card-title" style="justify-content:space-between">
+              <span>Istoric evaluări</span>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <select id="eval-ist-angajat" class="form-control" style="width:200px" onchange="evalRenderIstoric()"><option value="">Toți angajații</option></select>
+                <select id="eval-ist-sablon" class="form-control" style="width:180px" onchange="evalRenderIstoric()"><option value="">Toate șabloanele</option></select>
+              </div>
+            </div>
+          </div>
+          <div id="eval-istoric-lista"></div>
+        </div>
+
+        <!-- TAB: Șabloane -->
+        <div id="eval-panel-sabloane" style="display:none">
+          <div class="card" style="margin-bottom:1rem">
+            <div class="card-title" style="justify-content:space-between">
+              <span>Șabloane de evaluare</span>
+              <button class="btn" onclick="evalOpenSablonEditor(null)" style="background:var(--green);color:#fff">+ Șablon nou</button>
+            </div>
+          </div>
+          <div id="eval-sabloane-lista"></div>
+        </div>
       </div>
 
       <!-- ANGAJAȚI -->
@@ -1205,6 +1266,84 @@ create policy "admin_insert" on public.productie_evenimente for insert with chec
 create policy "admin_update" on public.productie_evenimente for update using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
 create policy "admin_delete2" on public.productie_evenimente for delete using (exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer')));
 
+-- ═══════════════════════════════════════
+-- EVALUĂRI
+-- ═══════════════════════════════════════
+
+-- Șabloane de evaluare (configurabile per funcție)
+create table if not exists public.eval_sabloane (
+  id uuid primary key default uuid_generate_v4(),
+  nume text not null,
+  functie text,                        -- funcția din organigramă (opțional)
+  descriere text,
+  sectiuni jsonb not null default '[]', -- [{id, titlu, tip:"general"|"conduita"|"profesionala", criterii:[{id,text,tip:"nota1-5"|"text",optiuni:[]}]}]
+  creat_de uuid references public.profiles(id) on delete set null,
+  activ boolean default true,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+create index if not exists idx_eval_sabloane_functie on public.eval_sabloane(functie);
+
+-- Evaluări completate
+create table if not exists public.evaluari (
+  id uuid primary key default uuid_generate_v4(),
+  sablon_id uuid references public.eval_sabloane(id) on delete set null,
+  sablon_snapshot jsonb,               -- copie a șablonului la momentul evaluării
+  angajat_id uuid references public.angajati(id) on delete cascade,
+  evaluator_id uuid references public.profiles(id) on delete set null,
+  data_evaluarii date not null,
+  raspunsuri jsonb not null default '{}', -- {criteriu_id: valoare}
+  observatii text,
+  scor_general numeric,                -- media calculată automată
+  semnat_de uuid references public.profiles(id) on delete set null,
+  semnat_la timestamptz,
+  status text default 'draft' check (status in ('draft','finalizat','semnat')),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+create index if not exists idx_evaluari_angajat on public.evaluari(angajat_id);
+create index if not exists idx_evaluari_evaluator on public.evaluari(evaluator_id);
+create index if not exists idx_evaluari_data on public.evaluari(data_evaluarii);
+
+-- RLS evaluări
+alter table public.eval_sabloane enable row level security;
+alter table public.evaluari enable row level security;
+
+-- Șabloane: toți văd, admin/coord pot modifica
+create policy "eval_sab_select" on public.eval_sabloane for select using (true);
+create policy "eval_sab_insert" on public.eval_sabloane for insert with check (
+  exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer'))
+  or exists(select 1 from public.profiles p join public.angajati a on a.id=p.angajat_id
+    join public.org_nodes on on on.angajat_id=a.id where p.id=auth.uid() and on.tip='coordonator')
+);
+create policy "eval_sab_update" on public.eval_sabloane for update using (
+  exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer'))
+  or creat_de=auth.uid()
+);
+create policy "eval_sab_delete" on public.eval_sabloane for delete using (
+  exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer'))
+  or creat_de=auth.uid()
+);
+
+-- Evaluări: admin vede tot; coordonatorul vede evaluările făcute de el; salariatul vede evaluările lui
+create policy "eval_admin_all" on public.evaluari for all using (
+  exists(select 1 from public.profiles where id=auth.uid() and role in ('admin','developer'))
+);
+create policy "eval_evaluator_select" on public.evaluari for select using (evaluator_id=auth.uid());
+create policy "eval_evaluator_insert" on public.evaluari for insert with check (evaluator_id=auth.uid());
+create policy "eval_evaluator_update" on public.evaluari for update using (evaluator_id=auth.uid() and status='draft');
+create policy "eval_own_select" on public.evaluari for select using (
+  angajat_id=(select angajat_id from public.profiles where id=auth.uid())
+);
+
+-- Trigger updated_at
+create or replace function public.set_updated_at()
+returns trigger language plpgsql as $$
+begin new.updated_at=now(); return new; end;
+$$;
+create trigger eval_sabloane_updated_at before update on public.eval_sabloane for each row execute function public.set_updated_at();
+create trigger evaluari_updated_at before update on public.evaluari for each row execute function public.set_updated_at();
+
 -- Trigger profil nou utilizator
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer as $$
@@ -1433,11 +1572,20 @@ function hasPerm(k){if(isAdmin()) return true;return currentProfile?.permissions
 function buildSidebarNav(){
   const isAd=isAdmin();
   const isDv=isDev();
+  const canEval=isAd||isCoordinator();
   document.getElementById('nav-section-admin').style.display=isAd?'block':'none';
   document.getElementById('nav-angajati').style.display=isAd?'flex':'none';
   document.getElementById('nav-utilizatori').style.display=isAd?'flex':'none';
+  // Evaluări: admin, coordonatori și orice user care are angajat asociat (ca să vadă evaluările proprii)
+  document.getElementById('nav-evaluari').style.display=(canEval||currentProfile?.angajat_id)?'flex':'none';
   document.querySelectorAll('.admin-only').forEach(el=>el.style.display=isAd?'':'none');
   document.querySelectorAll('.dev-only').forEach(el=>el.style.display=isDv?'':'none');
+}
+function isCoordinator(){
+  if(isAdmin()) return true;
+  if(!currentProfile?.angajat_id) return false;
+  // Coordonator = are un nod org de tip coordonator asociat
+  return allOrgNodes.some(n=>n.angajat_id===currentProfile.angajat_id&&n.tip==='coordonator');
 }
 // ─── Persistență filtre (sessionStorage) ───
 const FILTERS_KEY='pontaj_filters';
@@ -1453,8 +1601,8 @@ function loadFilter(prefix,key){
 function setSelectValue(id,val){const el=document.getElementById(id);if(el&&val!=null)el.value=val;}
 function setInputValue(id,val){const el=document.getElementById(id);if(el&&val!=null)el.value=val;}
 
-const PAGE_TITLES={dashboard:'Tablou de bord',pontaj:'Pontaj',invoiri:'Cereri invoiri',angajati:'Angajați',calendar:'Calendar',utilizatori:'Utilizatori',productie:'Producție'};
-const PAGE_SUBS={dashboard:'Bun venit!',pontaj:'Vizualizare și editare pontaj',invoiri:'Cereri de invoire',angajati:'Structură organizatorică',calendar:'Schimburi și sărbători legale',utilizatori:'Conturi și drepturi de acces',productie:'Raport eficiență producție'};
+const PAGE_TITLES={dashboard:'Tablou de bord',pontaj:'Pontaj',invoiri:'Cereri invoiri',angajati:'Angajați',calendar:'Calendar',utilizatori:'Utilizatori',productie:'Producție',evaluari:'Evaluări'};
+const PAGE_SUBS={dashboard:'Bun venit!',pontaj:'Vizualizare și editare pontaj',invoiri:'Cereri de invoire',angajati:'Structură organizatorică',calendar:'Schimburi și sărbători legale',utilizatori:'Conturi și drepturi de acces',productie:'Raport eficiență producție',evaluari:'Rapoarte de evaluare a personalului'};
 
 function showPage(id){
   sessionStorage.setItem('pontaj_last_page',id);
@@ -1474,6 +1622,7 @@ function showPage(id){
   if(id==='calendar') renderCalendar();
   if(id==='utilizatori') renderUtilizatori();
   if(id==='productie') initProductie();
+  if(id==='evaluari') initEvaluari();
 }
 function openMobMenu(){document.getElementById('sidebar').classList.add('open');document.getElementById('mob-overlay').classList.add('open');}
 function closeMobMenu(){document.getElementById('sidebar').classList.remove('open');document.getElementById('mob-overlay').classList.remove('open');}
@@ -4407,6 +4556,538 @@ function fmtDateISO(d){return d.toISOString().split('T')[0];}
 function tipLabel(t){return{CO:'Concediu Odihnă',CM:'Concediu Medical',INV:'Invoit',CFP:'Concediu Fără Plată',P:'Prezent',AB:'Absent'}[t]||t;}
 function statusLabel(s){return{pending:'În așteptare',aprobat:'Aprobat',refuzat:'Refuzat'}[s]||s;}
 function statusBadge(s){return{pending:'badge-amber',aprobat:'badge-green',refuzat:'badge-red'}[s]||'badge-gray';}
+
+// ═══════════════════════════════════════════════
+// EVALUĂRI
+// ═══════════════════════════════════════════════
+let allEvalSabloane=[], allEvaluari=[], evalTabActiv='nou', evalEditorSablon=null;
+
+async function initEvaluari(){
+  await Promise.all([loadEvalSabloane(),loadEvaluari()]);
+  evalPopulateSelectors();
+  evalShowTab(evalTabActiv);
+}
+async function loadEvalSabloane(){
+  const {data}=await sb.from('eval_sabloane').select('*').eq('activ',true).order('nume');
+  allEvalSabloane=data||[];
+}
+async function loadEvaluari(){
+  let q=sb.from('evaluari').select('*').order('data_evaluarii',{ascending:false});
+  if(!isAdmin()){
+    // Coordonatorul vede evaluările făcute de el + evaluările proprii (ca salariat)
+    // Supabase va aplica RLS automat — nu filtrăm suplimentar
+  }
+  const {data}=await q.limit(500);
+  allEvaluari=data||[];
+}
+
+function evalPopulateSelectors(){
+  const canEval=isCoordinator();
+  // Selector angajat pentru evaluare nouă
+  const angSel=document.getElementById('eval-angajat-sel');
+  if(angSel){
+    let lista=allAngajati.filter(a=>a.activ);
+    if(!isAdmin()&&isCoordinator()&&currentProfile?.angajat_id){
+      // Coordonator vede subordonații săi din org + pe el însuși opțional
+      const myAng=allAngajati.find(a=>a.id===currentProfile.angajat_id);
+      if(myAng){
+        const myNode=allOrgNodes.find(n=>n.angajat_id===myAng.id&&n.tip==='coordonator');
+        if(myNode){
+          const subIds=new Set(getSubOrdinati(myNode.id).map(a=>a.id));
+          lista=allAngajati.filter(a=>a.activ&&subIds.has(a.id));
+        }
+      }
+    }
+    angSel.innerHTML='<option value="">— selectează —</option>'+lista.map(a=>`<option value="${a.id}">${angNume(a)}${a.functie?' ('+a.functie+')':''}</option>`).join('');
+  }
+  // Selector șablon
+  const sabSel=document.getElementById('eval-sablon-sel');
+  if(sabSel) sabSel.innerHTML='<option value="">— selectează șablon —</option>'+allEvalSabloane.map(s=>`<option value="${s.id}">${s.nume}${s.functie?' – '+s.functie:''}</option>`).join('');
+  // Filtre istoric
+  const istAng=document.getElementById('eval-ist-angajat');
+  if(istAng) istAng.innerHTML='<option value="">Toți angajații</option>'+allAngajati.filter(a=>a.activ).map(a=>`<option value="${a.id}">${angNume(a)}</option>`).join('');
+  const istSab=document.getElementById('eval-ist-sablon');
+  if(istSab) istSab.innerHTML='<option value="">Toate șabloanele</option>'+allEvalSabloane.map(s=>`<option value="${s.id}">${s.nume}</option>`).join('');
+  // Data implicită = azi
+  const dataEl=document.getElementById('eval-data');
+  if(dataEl&&!dataEl.value) dataEl.value=new Date().toISOString().split('T')[0];
+}
+
+function getSubOrdinati(nodeId){
+  // Returnează toți angajații din subarborele unui nod
+  const result=[];
+  const queue=[nodeId];
+  while(queue.length){
+    const crt=queue.shift();
+    const node=allOrgNodes.find(n=>n.id===crt);
+    if(node?.angajat_id){
+      const ang=allAngajati.find(a=>a.id===node.angajat_id);
+      if(ang) result.push(ang);
+    }
+    allOrgNodes.filter(n=>n.parent_id===crt).forEach(child=>queue.push(child.id));
+  }
+  return result;
+}
+
+function evalShowTab(tab){
+  evalTabActiv=tab;
+  ['nou','istoric','sabloane'].forEach(t=>{
+    document.getElementById('eval-panel-'+t).style.display=t===tab?'':'none';
+    const btn=document.getElementById('eval-tab-'+t);
+    if(btn){btn.style.background=t===tab?'var(--orange)':'';btn.style.color=t===tab?'#fff':'';}
+  });
+  if(tab==='istoric') evalRenderIstoric();
+  if(tab==='sabloane') evalRenderSabloane();
+}
+
+function evalOnAngajatChange(){
+  // Când schimbăm angajatul, pre-selectăm șablonul potrivit funcției sale (dacă există)
+  const angId=document.getElementById('eval-angajat-sel').value;
+  const ang=allAngajati.find(a=>a.id===angId);
+  if(!ang?.functie) return;
+  const potrivit=allEvalSabloane.find(s=>s.functie&&s.functie.toLowerCase()===ang.functie.toLowerCase());
+  if(potrivit) document.getElementById('eval-sablon-sel').value=potrivit.id;
+}
+function evalOnSablonChange(){}
+
+function evalStartForm(){
+  const angId=document.getElementById('eval-angajat-sel').value;
+  const sabId=document.getElementById('eval-sablon-sel').value;
+  const data=document.getElementById('eval-data').value;
+  if(!angId){toast('Selectează un angajat','warning');return;}
+  if(!sabId){toast('Selectează un șablon de evaluare','warning');return;}
+  if(!data){toast('Selectează data evaluării','warning');return;}
+  const ang=allAngajati.find(a=>a.id===angId);
+  const sab=allEvalSabloane.find(s=>s.id===sabId);
+  evalRenderForm(ang,sab,data,null);
+}
+
+function evalRenderForm(ang,sab,data,evalExistenta){
+  const container=document.getElementById('eval-form-container');
+  const sectiuni=sab.sectiuni||[];
+  const raspExist=evalExistenta?.raspunsuri||{};
+  const obs=evalExistenta?.observatii||'';
+  const readonly=evalExistenta?.status==='semnat';
+  const tipCulori={general:'var(--navy)',conduita:'var(--purple)',profesionala:'var(--green)'};
+  const tipLabel={general:'Secțiune Generală',conduita:'Conduită',profesionala:'Profesională'};
+
+  let html=`<div class="card" style="margin-bottom:1rem">
+    <div class="card-title" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <span>Evaluare: <b>${angNume(ang)}</b>${ang.functie?' – '+ang.functie:''}</span>
+      <span style="font-size:12px;color:var(--text3)">Șablon: ${sab.nume} · ${fmtDate(data)}</span>
+    </div>
+    ${readonly?'<div class="alert alert-info" style="margin-bottom:0">Această evaluare a fost semnată și nu mai poate fi modificată.</div>':''}
+  </div>`;
+
+  sectiuni.forEach((sect,si)=>{
+    const culoare=tipCulori[sect.tip]||'var(--slate)';
+    html+=`<div class="card" style="margin-bottom:1rem;border-left:4px solid ${culoare}">
+      <div class="card-title" style="color:${culoare};margin-bottom:1rem">
+        <span style="background:${culoare};color:#fff;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;margin-right:8px">${tipLabel[sect.tip]||sect.tip}</span>
+        ${sect.titlu}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">`;
+    (sect.criterii||[]).forEach((cr,ci)=>{
+      const key=`${si}_${ci}`;
+      const val=raspExist[key]??'';
+      html+=`<div style="padding:12px;background:var(--bg2);border-radius:var(--r2)">
+        <div style="font-weight:600;margin-bottom:10px;font-size:14px">${ci+1}. ${cr.text}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">`;
+      if(cr.tip==='nota1-5'){
+        [1,2,3,4,5].forEach(n=>{
+          const labels=['','Foarte slab','Slab','Satisfăcător','Bine','Foarte bine'];
+          const sel=val==n;
+          html+=`<label style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:${readonly?'default':'pointer'}">
+            <input type="radio" name="eval-cr-${key}" value="${n}" ${sel?'checked':''} ${readonly?'disabled':''} onchange="evalUpdateScor()" style="accent-color:var(--orange);width:18px;height:18px"/>
+            <span style="font-size:10px;color:var(--text3);text-align:center;max-width:56px">${n}<br>${labels[n]}</span>
+          </label>`;
+        });
+      } else {
+        html+=`<textarea name="eval-cr-${key}" rows="2" ${readonly?'readonly':''} style="width:100%;resize:vertical;padding:8px;border:1px solid var(--border);border-radius:var(--r2);font-family:inherit;font-size:13px;background:${readonly?'var(--bg2)':'var(--bg1)'}">${val}</textarea>`;
+      }
+      html+=`</div></div>`;
+    });
+    html+=`</div></div>`;
+  });
+
+  html+=`<div class="card" style="margin-bottom:1rem">
+    <div class="card-title">Observații generale</div>
+    <textarea id="eval-obs" rows="3" ${readonly?'readonly':''} style="width:100%;resize:vertical;padding:8px;border:1px solid var(--border);border-radius:var(--r2);font-family:inherit;font-size:13px" placeholder="Notițe sau observații suplimentare...">${obs}</textarea>
+  </div>`;
+
+  if(!readonly){
+    html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:2rem">
+      <button class="btn" onclick="evalSalveaza('${ang.id}','${sab.id}','${data}','draft','${evalExistenta?.id||''}')" style="background:var(--slate);color:#fff">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;margin-right:4px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Salvează ciornă
+      </button>
+      <button class="btn" onclick="evalSalveaza('${ang.id}','${sab.id}','${data}','finalizat','${evalExistenta?.id||''}')" style="background:var(--orange);color:#fff">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;margin-right:4px"><path d="M9 11l3 3L22 4"/></svg>Finalizează evaluarea
+      </button>
+    </div>`;
+  } else {
+    // Semnat deja — afișăm info
+    html+=`<div class="alert alert-info" style="margin-bottom:2rem">
+      ✅ Evaluare semnată${evalExistenta?.semnat_la?' la '+fmtDate(evalExistenta.semnat_la.split('T')[0]):''}
+      <button class="btn btn-sm" style="margin-left:12px" onclick="evalExportPDF('${evalExistenta.id}')">📄 Export PDF</button>
+    </div>`;
+  }
+  if(evalExistenta?.status==='finalizat'){
+    html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:2rem">
+      <button class="btn" onclick="evalSemneaza('${evalExistenta.id}')" style="background:var(--green);color:#fff">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;margin-right:4px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Semnează evaluarea
+      </button>
+      <button class="btn btn-sm" onclick="evalExportPDF('${evalExistenta.id}')">📄 Export PDF</button>
+    </div>`;
+  }
+
+  container.innerHTML=html;
+  container.dataset.evalAngId=ang.id;
+  container.dataset.evalSabId=sab.id;
+  container.dataset.evalData=data;
+  container.dataset.evalId=evalExistenta?.id||'';
+  container.dataset.evalSablon=JSON.stringify(sab);
+}
+
+function evalUpdateScor(){
+  // calculat la salvare
+}
+
+function evalCulegeRaspunsuri(sab){
+  const raspunsuri={};
+  let totalNote=0,nrNote=0;
+  (sab.sectiuni||[]).forEach((sect,si)=>{
+    (sect.criterii||[]).forEach((cr,ci)=>{
+      const key=`${si}_${ci}`;
+      if(cr.tip==='nota1-5'){
+        const sel=document.querySelector(`input[name="eval-cr-${key}"]:checked`);
+        const v=sel?Number(sel.value):null;
+        raspunsuri[key]=v;
+        if(v!=null){totalNote+=v;nrNote++;}
+      } else {
+        const el=document.querySelector(`textarea[name="eval-cr-${key}"]`);
+        raspunsuri[key]=el?el.value.trim():'';
+      }
+    });
+  });
+  const scor=nrNote>0?(totalNote/nrNote):null;
+  return {raspunsuri,scor};
+}
+
+async function evalSalveaza(angId,sabId,data,status,evalIdExist){
+  const sab=allEvalSabloane.find(s=>s.id===sabId);
+  if(!sab){toast('Șablon negăsit','error');return;}
+  const {raspunsuri,scor}=evalCulegeRaspunsuri(sab);
+  const obs=document.getElementById('eval-obs')?.value||'';
+  const rec={
+    angajat_id:angId,
+    sablon_id:sabId,
+    sablon_snapshot:sab,
+    evaluator_id:currentProfile.id,
+    data_evaluarii:data,
+    raspunsuri,
+    observatii:obs,
+    scor_general:scor,
+    status
+  };
+  let err;
+  if(evalIdExist){
+    ({error:err}=await sb.from('evaluari').update(rec).eq('id',evalIdExist));
+  } else {
+    const {data:ins,error:e}=await sb.from('evaluari').insert(rec).select().single();
+    err=e;
+    if(ins) document.getElementById('eval-form-container').dataset.evalId=ins.id;
+  }
+  if(err){toast('Eroare la salvare: '+err.message,'error');return;}
+  toast(status==='finalizat'?'Evaluare finalizată!':'Ciornă salvată','success');
+  await loadEvaluari();
+  if(status==='finalizat'){
+    // Reîncarcă formularul ca readonly cu buton de semnare
+    const ang=allAngajati.find(a=>a.id===angId);
+    const evalId=document.getElementById('eval-form-container').dataset.evalId;
+    const evalObj=allEvaluari.find(e=>e.id===evalId)||{id:evalId,status:'finalizat',raspunsuri,observatii:obs,scor_general:scor};
+    evalRenderForm(ang,sab,data,evalObj);
+  }
+}
+
+async function evalSemneaza(evalId){
+  if(!confirm('Semnezi această evaluare? Nu va mai putea fi modificată.')) return;
+  const {error}=await sb.from('evaluari').update({status:'semnat',semnat_de:currentProfile.id,semnat_la:new Date().toISOString()}).eq('id',evalId);
+  if(error){toast('Eroare la semnare: '+error.message,'error');return;}
+  toast('Evaluare semnată cu succes!','success');
+  await loadEvaluari();
+  const ev=allEvaluari.find(e=>e.id===evalId);
+  if(ev){
+    const ang=allAngajati.find(a=>a.id===ev.angajat_id);
+    const sab=allEvalSabloane.find(s=>s.id===ev.sablon_id)||ev.sablon_snapshot;
+    evalRenderForm(ang,sab,ev.data_evaluarii,{...ev,status:'semnat'});
+  }
+}
+
+// ─── ISTORIC ────────────────────────────────────
+function evalRenderIstoric(){
+  const angF=document.getElementById('eval-ist-angajat')?.value||'';
+  const sabF=document.getElementById('eval-ist-sablon')?.value||'';
+  let lista=allEvaluari;
+  if(angF) lista=lista.filter(e=>e.angajat_id===angF);
+  if(sabF) lista=lista.filter(e=>e.sablon_id===sabF);
+  const el=document.getElementById('eval-istoric-lista');
+  if(!lista.length){el.innerHTML='<div class="alert alert-info">Nicio evaluare găsită.</div>';return;}
+  const statusColors={draft:'var(--amber)',finalizat:'var(--navy)',semnat:'var(--green)'};
+  const statusText={draft:'Ciornă',finalizat:'Finalizat',semnat:'Semnat'};
+  el.innerHTML=lista.map(ev=>{
+    const ang=allAngajati.find(a=>a.id===ev.angajat_id);
+    const sab=allEvalSabloane.find(s=>s.id===ev.sablon_id);
+    const scor=ev.scor_general!=null?Number(ev.scor_general).toFixed(2):null;
+    const stCol=statusColors[ev.status]||'var(--slate)';
+    return `<div class="card" style="margin-bottom:.7rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:.9rem 1.1rem">
+      <div style="flex:1;min-width:160px">
+        <div style="font-weight:600">${ang?angNume(ang):'—'}${ang?.functie?' <span style="font-weight:400;color:var(--text3);font-size:12px">'+ang.functie+'</span>':''}</div>
+        <div style="font-size:12px;color:var(--text3)">${fmtDate(ev.data_evaluarii)} · ${sab?.nume||'Șablon șters'}</div>
+      </div>
+      ${scor!=null?`<div style="text-align:center;min-width:60px"><div style="font-size:22px;font-weight:700;color:${Number(scor)>=4?'var(--green)':Number(scor)>=3?'var(--amber)':'var(--red)'}">${scor}</div><div style="font-size:10px;color:var(--text3)">din 5</div></div>`:''}
+      <span style="background:${stCol};color:#fff;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">${statusText[ev.status]||ev.status}</span>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm" onclick="evalDeschideExistenta('${ev.id}')">Deschide</button>
+        <button class="btn btn-sm" onclick="evalExportPDF('${ev.id}')">PDF</button>
+        ${isAdmin()?`<button class="btn btn-sm" style="color:var(--red)" onclick="evalSterge('${ev.id}')">Șterge</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function evalDeschideExistenta(evalId){
+  const ev=allEvaluari.find(e=>e.id===evalId);
+  if(!ev) return;
+  const ang=allAngajati.find(a=>a.id===ev.angajat_id);
+  const sab=allEvalSabloane.find(s=>s.id===ev.sablon_id)||ev.sablon_snapshot;
+  if(!ang||!sab){toast('Angajatul sau șablonul nu mai există','warning');return;}
+  // Populăm selectoarele și deschidem formularul
+  document.getElementById('eval-angajat-sel').value=ang.id;
+  document.getElementById('eval-sablon-sel').value=sab.id||'';
+  document.getElementById('eval-data').value=ev.data_evaluarii;
+  evalShowTab('nou');
+  evalRenderForm(ang,sab,ev.data_evaluarii,ev);
+}
+
+async function evalSterge(evalId){
+  if(!confirm('Ștergi această evaluare? Acțiunea este ireversibilă.')) return;
+  const {error}=await sb.from('evaluari').delete().eq('id',evalId);
+  if(error){toast('Eroare la ștergere: '+error.message,'error');return;}
+  toast('Evaluare ștearsă','success');
+  allEvaluari=allEvaluari.filter(e=>e.id!==evalId);
+  evalRenderIstoric();
+}
+
+// ─── EXPORT PDF ─────────────────────────────────
+async function evalExportPDF(evalId){
+  let ev=allEvaluari.find(e=>e.id===evalId);
+  if(!ev){
+    // fallback: fetch din Supabase
+    const {data}=await sb.from('evaluari').select('*').eq('id',evalId).single();
+    ev=data;
+  }
+  if(!ev){toast('Evaluare negăsită','error');return;}
+  const ang=allAngajati.find(a=>a.id===ev.angajat_id);
+  const sab=allEvalSabloane.find(s=>s.id===ev.sablon_id)||ev.sablon_snapshot;
+  if(!ang||!sab){toast('Date lipsă pentru export','error');return;}
+  const evaluator=allProfiles.find(p=>p.id===ev.evaluator_id);
+  const semnatar=ev.semnat_de?allProfiles.find(p=>p.id===ev.semnat_de):null;
+  const tipCulori={general:'#1e3a5f',conduita:'#6d28d9',profesionala:'#059669'};
+  const tipLabel={general:'Secțiune Generală',conduita:'Conduită',profesionala:'Profesională'};
+  const stele=n=>n?'★'.repeat(n)+'☆'.repeat(5-n):'—';
+  const scor=ev.scor_general!=null?Number(ev.scor_general).toFixed(2):null;
+  const notaColor=scor?(Number(scor)>=4?'#059669':Number(scor)>=3?'#d97706':'#dc2626'):'#64748b';
+
+  let sectHTML='';
+  (sab.sectiuni||[]).forEach((sect,si)=>{
+    const col=tipCulori[sect.tip]||'#334155';
+    sectHTML+=`<div style="margin-bottom:20px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+      <div style="background:${col};color:#fff;padding:10px 16px;font-weight:700;font-size:13px">${tipLabel[sect.tip]||sect.tip}: ${sect.titlu}</div>
+      <table style="width:100%;border-collapse:collapse">`;
+    (sect.criterii||[]).forEach((cr,ci)=>{
+      const key=`${si}_${ci}`;
+      const val=ev.raspunsuri?.[key];
+      const afisaj=cr.tip==='nota1-5'?(val!=null?`<span style="color:${val>=4?'#059669':val>=3?'#d97706':'#dc2626'};font-weight:700">${val}/5 ${stele(val)}</span>`:'—'):val||'—';
+      const bg=ci%2===0?'#f8fafc':'#fff';
+      sectHTML+=`<tr style="background:${bg}">
+        <td style="padding:9px 16px;border-bottom:1px solid #e2e8f0;font-size:12px;width:55%;vertical-align:top">${cr.text}</td>
+        <td style="padding:9px 16px;border-bottom:1px solid #e2e8f0;font-size:12px">${afisaj}</td>
+      </tr>`;
+    });
+    sectHTML+=`</table></div>`;
+  });
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Evaluare ${angNume(ang)}</title>
+  <style>body{font-family:Arial,sans-serif;margin:0;padding:32px;color:#1e293b;max-width:800px;margin:auto}
+  h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;color:#64748b;margin:0 0 20px;font-weight:400}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e2e8f0}
+  .logo{font-size:11px;color:#94a3b8;text-align:right}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:24px}
+  .info-box{background:#f8fafc;padding:12px;border-radius:6px}
+  .info-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+  .info-val{font-size:13px;font-weight:600}
+  .scor-box{background:#f0fdf4;border:2px solid #86efac;border-radius:8px;padding:16px;text-align:center;margin-bottom:20px}
+  .obs{background:#f8fafc;padding:12px 16px;border-radius:8px;font-size:12px;color:#475569;margin-bottom:20px;white-space:pre-wrap}
+  .sign{display:flex;justify-content:space-between;margin-top:32px;padding-top:16px;border-top:2px solid #e2e8f0;font-size:11px;color:#94a3b8}
+  @media print{body{padding:16px}}</style></head><body>
+  <div class="header">
+    <div><h1>Raport de Evaluare</h1><h2>${sab.nume}</h2></div>
+    <div class="logo">SC TEAM INDUSTRIES ROMANIA<br>Evaluare personal</div>
+  </div>
+  <div class="info-grid">
+    <div class="info-box"><div class="info-label">Angajat evaluat</div><div class="info-val">${angNume(ang)}</div></div>
+    <div class="info-box"><div class="info-label">Funcție</div><div class="info-val">${ang.functie||'—'}</div></div>
+    <div class="info-box"><div class="info-label">Data evaluării</div><div class="info-val">${fmtDate(ev.data_evaluarii)}</div></div>
+    <div class="info-box"><div class="info-label">Evaluator</div><div class="info-val">${evaluator?.full_name||evaluator?.username||'—'}</div></div>
+  </div>
+  ${scor!=null?`<div class="scor-box"><div style="font-size:11px;color:#059669;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Scor general</div>
+    <div style="font-size:36px;font-weight:800;color:${notaColor}">${scor}<span style="font-size:16px;color:#94a3b8">/5</span></div>
+    <div style="font-size:13px;color:#64748b">${stele(Math.round(Number(scor)))}</div></div>`:''}
+  ${sectHTML}
+  ${ev.observatii?`<div style="margin-bottom:4px;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748b">Observații</div><div class="obs">${ev.observatii}</div>`:''}
+  <div class="sign">
+    <div>Evaluator: <b>${evaluator?.full_name||evaluator?.username||'—'}</b><br>${ev.status==='semnat'?'✓ Semnat digital':''}</div>
+    ${ev.status==='semnat'&&semnatar?`<div style="text-align:right">Semnat de: <b>${semnatar.full_name||semnatar.username}</b><br>${ev.semnat_la?fmtDate(ev.semnat_la.split('T')[0]):''}</div>`:''}
+  </div>
+  <script>window.onload=function(){window.print();}<\/script>
+  </body></html>`;
+  const w=window.open('','_blank');
+  if(w){w.document.write(html);w.document.close();}
+}
+
+// ─── ȘABLOANE ───────────────────────────────────
+function evalRenderSabloane(){
+  const el=document.getElementById('eval-sabloane-lista');
+  if(!allEvalSabloane.length){
+    el.innerHTML=`<div class="alert alert-info">Niciun șablon creat încă. <button class="btn btn-sm" onclick="evalOpenSablonEditor(null)" style="margin-left:8px">Creează primul șablon</button></div>`;
+    return;
+  }
+  el.innerHTML=allEvalSabloane.map(s=>{
+    const nrCriterii=(s.sectiuni||[]).reduce((a,sect)=>a+(sect.criterii||[]).length,0);
+    return `<div class="card" style="margin-bottom:.7rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:.9rem 1.1rem">
+      <div style="flex:1">
+        <div style="font-weight:700">${s.nume}</div>
+        <div style="font-size:12px;color:var(--text3)">${s.functie?'Funcție: '+s.functie+' · ':''} ${(s.sectiuni||[]).length} secțiuni · ${nrCriterii} criterii${s.descriere?' · '+s.descriere:''}</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm" onclick="evalOpenSablonEditor('${s.id}')">Editează</button>
+        ${isAdmin()||s.creat_de===currentProfile.id?`<button class="btn btn-sm" style="color:var(--red)" onclick="evalStergeSablon('${s.id}')">Șterge</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function evalOpenSablonEditor(sabId){
+  const sab=sabId?allEvalSabloane.find(s=>s.id===sabId):null;
+  evalEditorSablon={
+    id:sabId||null,
+    nume:sab?.nume||'',
+    functie:sab?.functie||'',
+    descriere:sab?.descriere||'',
+    sectiuni:JSON.parse(JSON.stringify(sab?.sectiuni||[
+      {id:'s0',titlu:'Informații generale',tip:'general',criterii:[]},
+      {id:'s1',titlu:'Conduită și comportament',tip:'conduita',criterii:[]},
+      {id:'s2',titlu:'Competențe profesionale',tip:'profesionala',criterii:[]}
+    ]))
+  };
+  evalRenderEditorSablon();
+}
+
+function evalRenderEditorSablon(){
+  const s=evalEditorSablon;
+  const tipOpt=['general','conduita','profesionala'];
+  const tipLabels={general:'Generală',conduita:'Conduită',profesionala:'Profesională'};
+  let html=`<div class="card" style="margin-bottom:1rem">
+    <div class="card-title">${s.id?'Editare șablon':'Șablon nou'}</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem">
+      <div class="form-group" style="margin:0;flex:1;min-width:180px">
+        <label class="form-label">Nume șablon *</label>
+        <input class="form-control" id="esab-nume" value="${s.nume}" placeholder="ex: Evaluare operator CNC"/>
+      </div>
+      <div class="form-group" style="margin:0;flex:1;min-width:150px">
+        <label class="form-label">Funcție asociată</label>
+        <input class="form-control" id="esab-functie" value="${s.functie}" placeholder="ex: Operator CNC" list="esab-functii-list"/>
+        <datalist id="esab-functii-list">${[...new Set(allAngajati.map(a=>a.functie).filter(Boolean))].map(f=>`<option value="${f}"/>`).join('')}</datalist>
+      </div>
+      <div class="form-group" style="margin:0;flex:2;min-width:200px">
+        <label class="form-label">Descriere</label>
+        <input class="form-control" id="esab-desc" value="${s.descriere}" placeholder="Opțional"/>
+      </div>
+    </div>
+  </div>`;
+
+  s.sectiuni.forEach((sect,si)=>{
+    html+=`<div class="card" style="margin-bottom:.8rem;border-left:4px solid var(--slate)">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <input class="form-control" style="flex:2;min-width:160px" placeholder="Titlu secțiune" value="${sect.titlu}" oninput="evalEditorSablon.sectiuni[${si}].titlu=this.value"/>
+        <select class="form-control" style="width:160px" onchange="evalEditorSablon.sectiuni[${si}].tip=this.value;evalRenderEditorSablon()">
+          ${tipOpt.map(t=>`<option value="${t}" ${sect.tip===t?'selected':''}>${tipLabels[t]}</option>`).join('')}
+        </select>
+        <button class="btn btn-sm" style="color:var(--red)" onclick="evalEditorSablon.sectiuni.splice(${si},1);evalRenderEditorSablon()">Șterge secțiune</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px" id="esab-criterii-${si}">`;
+    (sect.criterii||[]).forEach((cr,ci)=>{
+      html+=`<div style="display:flex;gap:8px;align-items:center;background:var(--bg2);padding:10px;border-radius:var(--r2)">
+        <input class="form-control" style="flex:3;min-width:160px" placeholder="Text criteriu" value="${cr.text}" oninput="evalEditorSablon.sectiuni[${si}].criterii[${ci}].text=this.value"/>
+        <select class="form-control" style="width:150px" onchange="evalEditorSablon.sectiuni[${si}].criterii[${ci}].tip=this.value">
+          <option value="nota1-5" ${cr.tip==='nota1-5'?'selected':''}>Notă 1–5</option>
+          <option value="text" ${cr.tip==='text'?'selected':''}>Răspuns text</option>
+        </select>
+        <button class="btn btn-sm" style="color:var(--red);flex-shrink:0" onclick="evalEditorSablon.sectiuni[${si}].criterii.splice(${ci},1);evalRenderEditorSablon()">✕</button>
+      </div>`;
+    });
+    html+=`</div>
+      <button class="btn btn-sm" onclick="evalEditorSablon.sectiuni[${si}].criterii.push({id:'c'+Date.now(),text:'',tip:'nota1-5'});evalRenderEditorSablon()" style="margin-top:10px">+ Adaugă criteriu</button>
+    </div>`;
+  });
+
+  html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:2rem">
+    <button class="btn btn-sm" onclick="evalEditorSablon.sectiuni.push({id:'s'+Date.now(),titlu:'Secțiune nouă',tip:'general',criterii:[]});evalRenderEditorSablon()">+ Adaugă secțiune</button>
+    <button class="btn" onclick="evalSalvezaSablon()" style="background:var(--orange);color:#fff">Salvează șablon</button>
+    <button class="btn btn-sm" onclick="evalEditorSablon=null;evalRenderSabloane();document.getElementById('eval-sabloane-lista').scrollIntoView()">Anulează</button>
+  </div>`;
+
+  const container=document.getElementById('eval-sabloane-lista');
+  container.innerHTML=html;
+}
+
+async function evalSalvezaSablon(){
+  const s=evalEditorSablon;
+  s.nume=document.getElementById('esab-nume').value.trim();
+  s.functie=document.getElementById('esab-functie').value.trim();
+  s.descriere=document.getElementById('esab-desc').value.trim();
+  if(!s.nume){toast('Numele șablonului este obligatoriu','warning');return;}
+  // Validare: fiecare criteriu trebuie să aibă text
+  for(const sect of s.sectiuni){
+    for(const cr of sect.criterii||[]){
+      if(!cr.text.trim()){toast('Completează textul tuturor criteriilor','warning');return;}
+    }
+  }
+  const rec={nume:s.nume,functie:s.functie||null,descriere:s.descriere||null,sectiuni:s.sectiuni,creat_de:currentProfile.id,activ:true};
+  let err;
+  if(s.id){
+    ({error:err}=await sb.from('eval_sabloane').update(rec).eq('id',s.id));
+  } else {
+    ({error:err}=await sb.from('eval_sabloane').insert(rec));
+  }
+  if(err){toast('Eroare la salvare: '+err.message,'error');return;}
+  toast('Șablon salvat!','success');
+  evalEditorSablon=null;
+  await loadEvalSabloane();
+  evalPopulateSelectors();
+  evalRenderSabloane();
+}
+
+async function evalStergeSablon(sabId){
+  if(!confirm('Ștergi acest șablon? Evaluările existente nu vor fi afectate (au snapshot).')) return;
+  const {error}=await sb.from('eval_sabloane').update({activ:false}).eq('id',sabId);
+  if(error){toast('Eroare: '+error.message,'error');return;}
+  toast('Șablon dezactivat','success');
+  await loadEvalSabloane();
+  evalPopulateSelectors();
+  evalRenderSabloane();
+}
+
 </script>
 </body>
 </html>
