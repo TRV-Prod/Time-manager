@@ -584,7 +584,7 @@ tr:hover td{background:var(--slate-ll)}
           </div>
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Utilizator</th><th>Rol</th><th>Angajat asociat</th><th>Status</th><th>Acțiuni</th></tr></thead>
+          <thead><tr><th>Utilizator</th><th>Rol</th><th>Angajat asociat</th><th>Nr. matricol</th><th>Status</th><th>Acțiuni</th></tr></thead>
           <tbody id="util-tbody"></tbody>
         </table></div>
 
@@ -4451,6 +4451,7 @@ function renderUtilizatori(){
     const isSelf=u.id===currentProfile?.id;
     const avBg={developer:'var(--purple-l)',admin:'var(--orange-l)',user:'var(--navy-ll)'};
     const avColor={developer:'var(--purple)',admin:'var(--orange-d)',user:'var(--navy)'};
+    const nrMat=ang?.nr_matricol||'—';
     return `<tr style="${isSelf?'background:var(--orange-l)':''}">
       <td><div style="display:flex;align-items:center;gap:8px">
         <div class="ang-avatar" style="width:32px;height:32px;font-size:11px;background:${avBg[u.role]||'var(--navy-ll)'};color:${avColor[u.role]||'var(--navy)'}">${ini}</div>
@@ -4459,6 +4460,7 @@ function renderUtilizatori(){
       </div></td>
       <td><span class="badge ${rBadge[u.role]||'badge-navy'}">${rLabel[u.role]||u.role}</span></td>
       <td>${asociat||'<span style="color:var(--text3)">—</span>'}</td>
+      <td><span style="font-family:monospace;font-size:12px">${nrMat}</span></td>
       <td><span class="badge ${u.activ?'badge-green':'badge-red'}">${u.activ?'Activ':'Inactiv'}</span></td>
       <td><button class="btn btn-sm" onclick="openUtilizatorModal('${u.id}')">Editează</button></td></tr>`;
   }).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:1.5rem">Niciun utilizator găsit.</td></tr>';
@@ -5124,12 +5126,12 @@ async function evalExportPDF(evalId){
     <td class="title-cell">
       <div class="doc-title-sub">Fisa evaluare pentru angajatii cu functii de <b>${esteConductor?'CONDUCERE':'EXECUTIE'}</b></div>
     </td>
-    <td class="code-cell">Ed. 4, rev. 0</td>
+    <td class="code-cell">Ed. 5, rev. 0</td>
   </tr>
   <tr>
     <td class="logo-cell" style="font-size:9px;color:#64748b;text-align:center">${orgNume}</td>
     <td class="title-cell" style="font-size:10px">Data: <b>${dataSemnariiStr}</b></td>
-    <td class="code-cell" style="font-size:10px">Pagina <span id="pgnr">1</span> din <span id="pgct">1</span></td>
+    <td class="code-cell" style="font-size:10px">Pagina 1 din <span data-pgcount>1</span></td>
   </tr>
 </table>
 
@@ -5142,13 +5144,13 @@ async function evalExportPDF(evalId){
   <tr>
     <td style="padding:0;border-right:2px solid #1e3a5f;vertical-align:top">
       <div class="field-row"><b>Nume :</b> ${angajatNume}</div>
-      <div class="field-row"><b>Nr. marca :</b> ${ang.nr_marca||'—'}</div>
+      <div class="field-row"><b>Nr. marca :</b> ${ang.nr_matricol||'—'}</div>
       <div class="field-row"><b>Functia :</b> ${ang.functie||'—'}</div>
       <div class="field-row"><b>Perioada evaluata:</b> ${perioadaEval}</div>
     </td>
     <td style="padding:0;vertical-align:top">
       <div class="field-row"><b>Nume :</b> ${evaluatorNume}</div>
-      <div class="field-row"><b>Nr. marca :</b> &nbsp;</div>
+      <div class="field-row"><b>Nr. marca :</b> ${evaluatorAngajat?.nr_matricol||'—'}</div>
       <div class="field-row"><b>Functia :</b> ${evaluatorFunctie}</div>
       <div class="field-row">&nbsp;</div>
     </td>
@@ -5241,10 +5243,13 @@ ${ev.observatii?`<div class="obs-box">${ev.observatii}</div>`:`<div class="obs-b
 
 <script>
 window.onload=function(){
-  // Paginare dinamică via CSS counter
-  var style=document.createElement('style');
-  style.textContent='body{counter-reset:pg;}@page{}.page-break{counter-increment:pg;}';
-  document.head.appendChild(style);
+  // Calculăm numărul de pagini A4 portrait bazat pe înălțimea conținutului
+  // @page margin 10mm sus+jos = 20mm, A4 înălțime = 297mm → zonă utilă = 277mm = ~1047px la 96dpi
+  var pageHeightPx = 1047;
+  var totalHeight = document.body.scrollHeight;
+  var pageCount = Math.max(1, Math.ceil(totalHeight / pageHeightPx));
+  // Actualizăm toate elementele de paginare
+  document.querySelectorAll('[data-pgcount]').forEach(function(el){ el.textContent = pageCount; });
   window.print();
 };
 <\/script>
