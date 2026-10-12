@@ -4637,7 +4637,8 @@ function evalShowTab(tab){
     if(btn){btn.style.background=t===tab?'var(--orange)':'';btn.style.color=t===tab?'#fff':'';}
   });
   if(tab==='istoric') evalRenderIstoric();
-  if(tab==='sabloane') evalRenderSabloane();
+  // Dacă tab-ul sabloane se activează dar editorul e deschis, nu re-randăm lista
+  if(tab==='sabloane'&&!evalEditorSablon) evalRenderSabloane();
 }
 
 function evalOnAngajatChange(){
