@@ -4563,6 +4563,8 @@ function statusBadge(s){return{pending:'badge-amber',aprobat:'badge-green',refuz
 let allEvalSabloane=[], allEvaluari=[], evalTabActiv='nou', evalEditorSablon=null;
 
 async function initEvaluari(){
+  // Dacă editorul de șablon e deschis, nu re-inițializăm pagina — datele s-ar pierde
+  if(evalEditorSablon) return;
   await Promise.all([loadEvalSabloane(),loadEvaluari()]);
   evalPopulateSelectors();
   evalShowTab(evalTabActiv);
@@ -5135,6 +5137,8 @@ ${ev.observatii?`<div style="margin-bottom:6px;font-weight:bold;font-size:12px">
 
 // ─── ȘABLOANE ───────────────────────────────────
 function evalRenderSabloane(){
+  // Nu suprascrie dacă editorul de șablon e activ — datele nesalvate s-ar pierde
+  if(evalEditorSablon) return;
   const el=document.getElementById('eval-sabloane-lista');
   if(!allEvalSabloane.length){
     el.innerHTML=`<div class="alert alert-info">Niciun șablon creat încă. <button class="btn btn-sm" onclick="evalOpenSablonEditor(null)" style="margin-left:8px">Creează primul șablon</button></div>`;
@@ -5172,6 +5176,27 @@ function evalOpenSablonEditor(sabId){
 }
 
 function evalRenderEditorSablon(){
+  // Salvăm datele din inputurile existente înainte de re-randare
+  // (previne pierderea textelor tocmai tastate când se adaugă/șterge o secțiune/criteriu)
+  const numeEl=document.getElementById('esab-nume');
+  if(numeEl&&evalEditorSablon) evalEditorSablon.nume=numeEl.value;
+  const functieEl=document.getElementById('esab-functie');
+  if(functieEl&&evalEditorSablon) evalEditorSablon.functie=functieEl.value;
+  const descEl=document.getElementById('esab-desc');
+  if(descEl&&evalEditorSablon) evalEditorSablon.descriere=descEl.value;
+  // Salvăm titlurile secțiunilor și textele criteriilor
+  if(evalEditorSablon){
+    evalEditorSablon.sectiuni.forEach((sect,si)=>{
+      const titluEl=document.querySelector(`#esab-criterii-${si}`)?.closest('.card')?.querySelector('input[placeholder="Titlu secțiune"]');
+      if(titluEl) sect.titlu=titluEl.value;
+      const tipEl=document.getElementById(`esab-tip-${si}`);
+      if(tipEl) sect.tip=tipEl.value;
+      (sect.criterii||[]).forEach((cr,ci)=>{
+        const crEl=document.querySelectorAll(`#esab-criterii-${si} input[placeholder="Text criteriu"]`)[ci];
+        if(crEl) cr.text=crEl.value;
+      });
+    });
+  }
   const s=evalEditorSablon;
   const tipOpt=['general','conduita','profesionala'];
   const tipLabels={general:'Generală',conduita:'Conduită',profesionala:'Profesională'};
@@ -5198,7 +5223,7 @@ function evalRenderEditorSablon(){
     html+=`<div class="card" style="margin-bottom:.8rem;border-left:4px solid var(--slate)">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
         <input class="form-control" style="flex:2;min-width:160px" placeholder="Titlu secțiune" value="${sect.titlu}" oninput="evalEditorSablon.sectiuni[${si}].titlu=this.value"/>
-        <select class="form-control" style="width:160px" onchange="evalEditorSablon.sectiuni[${si}].tip=this.value;evalRenderEditorSablon()">
+        <select class="form-control" style="width:160px" id="esab-tip-${si}" onchange="evalEditorSablon.sectiuni[${si}].tip=this.value">
           ${tipOpt.map(t=>`<option value="${t}" ${sect.tip===t?'selected':''}>${tipLabels[t]}</option>`).join('')}
         </select>
         <button class="btn btn-sm" style="color:var(--red)" onclick="evalEditorSablon.sectiuni.splice(${si},1);evalRenderEditorSablon()">Șterge secțiune</button>
