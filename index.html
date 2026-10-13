@@ -480,6 +480,10 @@ tr:hover td{background:var(--slate-ll)}
                 <label class="form-label">Data evaluării</label>
                 <input type="date" id="eval-data" class="form-control" />
               </div>
+              <div class="form-group" style="margin:0;min-width:180px">
+                <label class="form-label">Perioada evaluată</label>
+                <input type="text" id="eval-perioada" class="form-control" placeholder="ex: Ian – Dec 2024" />
+              </div>
               <button class="btn" onclick="evalStartForm()" style="background:var(--navy);color:#fff;margin-bottom:0">Deschide formular</button>
             </div>
           </div>
@@ -4659,27 +4663,42 @@ function evalStartForm(){
   const angId=document.getElementById('eval-angajat-sel').value;
   const sabId=document.getElementById('eval-sablon-sel').value;
   const data=document.getElementById('eval-data').value;
+  const perioada=document.getElementById('eval-perioada')?.value.trim()||'';
   if(!angId){toast('Selectează un angajat','warning');return;}
   if(!sabId){toast('Selectează un șablon de evaluare','warning');return;}
   if(!data){toast('Selectează data evaluării','warning');return;}
   const ang=allAngajati.find(a=>a.id===angId);
   const sab=allEvalSabloane.find(s=>s.id===sabId);
-  evalRenderForm(ang,sab,data,null);
+  evalRenderForm(ang,sab,data,null,perioada);
 }
 
-function evalRenderForm(ang,sab,data,evalExistenta){
+function evalRenderForm(ang,sab,data,evalExistenta,perioada){
   const container=document.getElementById('eval-form-container');
   const sectiuni=sab.sectiuni||[];
   const raspExist=evalExistenta?.raspunsuri||{};
+  // preluăm perioada din raspunsuri.__perioada__ dacă nu a fost pasată explicit
+  if(perioada===undefined||perioada===null) perioada=raspExist.__perioada__||'';
   const obs=evalExistenta?.observatii||'';
   const readonly=evalExistenta?.status==='semnat';
   const tipCulori={general:'var(--navy)',conduita:'var(--purple)',profesionala:'var(--green)'};
   const tipLabel={general:'Secțiune Generală',conduita:'Conduită',profesionala:'Profesională'};
 
+  const perioadaHtml=readonly
+    ?`<span style="font-size:12px;color:var(--text3)">Perioada: <b>${perioada||'—'}</b></span>`
+    :`<span style="display:flex;align-items:center;gap:6px;font-size:13px">
+        <label style="font-weight:600;white-space:nowrap">Perioada evaluată:</label>
+        <input type="text" id="eval-form-perioada" value="${perioada.replace(/"/g,'&quot;')}"
+          placeholder="ex: Ian – Dec 2024"
+          style="border:1px solid var(--border);border-radius:var(--r2);padding:4px 10px;font-size:13px;min-width:160px;background:var(--bg1)"/>
+      </span>`;
+
   let html=`<div class="card" style="margin-bottom:1rem">
     <div class="card-title" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
       <span>Evaluare: <b>${angNume(ang)}</b>${ang.functie?' – '+ang.functie:''}</span>
-      <span style="font-size:12px;color:var(--text3)">Șablon: ${sab.nume} · ${fmtDate(data)}</span>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px">
+        ${perioadaHtml}
+        <span style="font-size:12px;color:var(--text3)">Șablon: ${sab.nume} · ${fmtDate(data)}</span>
+      </div>
     </div>
     ${readonly?'<div class="alert alert-info" style="margin-bottom:0">Această evaluare a fost semnată și nu mai poate fi modificată.</div>':''}
   </div>`;
@@ -4809,14 +4828,18 @@ function evalCulegeRaspunsuri(sab){
       }
     });
   });
+  // preluăm perioada din inputul din formular (dacă există)
+  const perioadaInput=document.getElementById('eval-form-perioada');
+  const perioada=perioadaInput?perioadaInput.value.trim():'';
+  if(perioada) raspunsuri.__perioada__=perioada;
   const scor=nrNote>0?(totalNote/nrNote):null;
-  return {raspunsuri,scor};
+  return {raspunsuri,scor,perioada};
 }
 
 async function evalSalveaza(angId,sabId,data,status,evalIdExist){
   const sab=allEvalSabloane.find(s=>s.id===sabId);
   if(!sab){toast('Șablon negăsit','error');return;}
-  const {raspunsuri,scor}=evalCulegeRaspunsuri(sab);
+  const {raspunsuri,scor,perioada}=evalCulegeRaspunsuri(sab);
   const obs=document.getElementById('eval-obs')?.value||'';
   const rec={
     angajat_id:angId,
@@ -4845,7 +4868,7 @@ async function evalSalveaza(angId,sabId,data,status,evalIdExist){
     const ang=allAngajati.find(a=>a.id===angId);
     const evalId=document.getElementById('eval-form-container').dataset.evalId;
     const evalObj=allEvaluari.find(e=>e.id===evalId)||{id:evalId,status:'finalizat',raspunsuri,observatii:obs,scor_general:scor};
-    evalRenderForm(ang,sab,data,evalObj);
+    evalRenderForm(ang,sab,data,evalObj,perioada);
   }
 }
 
@@ -4927,8 +4950,11 @@ async function evalDeschideExistenta(evalId){
   document.getElementById('eval-angajat-sel').value=ang.id;
   document.getElementById('eval-sablon-sel').value=sab.id||'';
   document.getElementById('eval-data').value=ev.data_evaluarii;
+  const perioadaExist=ev.raspunsuri?.__perioada__||'';
+  const perioadaInp=document.getElementById('eval-perioada');
+  if(perioadaInp) perioadaInp.value=perioadaExist;
   evalShowTab('nou');
-  evalRenderForm(ang,sab,ev.data_evaluarii,ev);
+  evalRenderForm(ang,sab,ev.data_evaluarii,ev,perioadaExist);
 }
 
 async function evalSterge(evalId){
@@ -5000,7 +5026,7 @@ async function evalExportPDF(evalId){
 
   const evaluatorNume=evaluator?.full_name||evaluator?.username||'—';
   const angajatNume=angNume(ang);
-  const perioadaEval=ev.data_evaluarii?(()=>{const d=new Date(ev.data_evaluarii);return d.getFullYear();})():'2025';
+  const perioadaEval=ev.raspunsuri?.__perioada__||(ev.data_evaluarii?(()=>{const d=new Date(ev.data_evaluarii);return d.getFullYear();})():'—');
 
   // ── Generare rânduri tabel criterii (format orizontal) ─────────────
   let criteriiRows='';
