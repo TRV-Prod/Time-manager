@@ -3806,7 +3806,7 @@ async function renderProductieRaport(){
 let prodChartInstance=null;
 let prodChartData={totalNormat:0,totalRaportat:0,totalPontat:0,perZi:{}};
 
-function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataStart,dataEnd,pontMapPerZi){
+async function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataStart,dataEnd,pontMapPerZi){
   const isAd=isAdmin();
   let totalNormat=0,totalRaportat=0,totalQty=0;
   const perZi={}; // data -> {normat,raportat,pontat}
@@ -3849,22 +3849,111 @@ function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataStart,dat
   // Timp pontat efectiv = total ore pontate - 20 min pauza/zi lucrată
   const nrZileLucrate=Object.keys(pontMapPerZi||{}).length;
   const totalPontatMin=Math.max(0,(totalOrePontateH||0)*60 - nrZileLucrate*PAUZA_MIN);
+  // ── Cartușe statistice compacte ──────────────────────────────────────
+  function miniStat(label,val,color){
+    return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;display:flex;flex-direction:column;min-width:0">
+      <span style="font-size:8.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</span>
+      <span style="font-size:13px;font-weight:700;color:${color};line-height:1.2;margin-top:1px">${val}</span>
+    </div>`;
+  }
   document.getElementById('prod-summary').innerHTML=`
-    ${statCard('Operații',rows.length,'var(--navy)','var(--navy-ll)','M9 11l3 3L22 4')}
-    ${statCard('Cantitate totală',totalQty,'var(--orange)','var(--orange-l)','M12 20V10M18 20V4M6 20v-4')}
-    ${statCard('Timp normat',fmtMinutes(totalNormat),'var(--slate)','var(--slate-ll)','M12 6v6l4 2')}
-    ${statCard('Timp raportat',fmtMinutes(totalRaportat),'var(--amber)','var(--amber-l)','M12 6v6l4 2')}
-    ${statCard('Timp pontat (fără pauză)',fmtMinutes(totalPontatMin),'var(--purple)','var(--purple-l)','M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z')}
+    ${miniStat('Operații',rows.length,'var(--navy)')}
+    ${miniStat('Cantitate',totalQty,'var(--orange)')}
+    ${miniStat('T. normat',fmtMinutes(totalNormat),'var(--slate)')}
+    ${miniStat('T. raportat',fmtMinutes(totalRaportat),'var(--amber)')}
+    ${miniStat('T. pontat',fmtMinutes(totalPontatMin),'var(--purple)')}
   `;
 
-  // Propoziție-rezumat personalizată, doar când raportul e restrâns la un singur angajat
-  // (fie pentru că un user obișnuit își vede propriul raport, fie pentru că admin a filtrat pe un angajat anume)
+  // ── Rezumat personalizat + date suplimentare pentru angajat selectat ──
   const rezumatEl=document.getElementById('prod-rezumat');
   if(angajatFiltrat&&rows.length){
     const nume=angNume(angajatFiltrat);
     const effTxt=eficientaTotal.toFixed(2).replace('.',',');
     const effColor=eficientaTotal>=90?'var(--green)':eficientaTotal>=70?'var(--amber)':'var(--red)';
-    rezumatEl.innerHTML=`<div style="background:var(--navy-ll);border:1px solid var(--border);border-radius:var(--r2);padding:.9rem 1.1rem;font-size:14.5px;font-weight:500;color:var(--navy);line-height:1.7">Pentru cele <b>${totalQty}</b> piese raportate de <b>${nume}</b>, a fost raportat un timp de <b>${fmtMinutes(totalRaportat)}</b>. Aceleași piese trebuiau realizate în <b>${fmtMinutes(totalNormat)}</b> conform structurilor. Eficiența este de <b style="color:${effColor};font-size:16px">${effTxt}%</b>!</div>`;
+
+    // Ultima evaluare (semnat sau finalizat) pentru angajatul selectat
+    const evaluariAng=(allEvaluari||[])
+      .filter(e=>e.angajat_id===angajatFiltrat.id&&(e.status==='semnat'||e.status==='finalizat'))
+      .sort((a,b)=>(b.data_evaluarii||'').localeCompare(a.data_evaluarii||''));
+    const ultimaEval=evaluariAng[0]||null;
+    let evalHtml='';
+    if(ultimaEval){
+      // Calculăm calificativul din scor_general și structura șablonului
+      const sab=allEvalSabloane.find(s=>s.id===ultimaEval.sablon_id)||ultimaEval.sablon_snapshot;
+      const rasp=ultimaEval.raspunsuri||{};
+      let totalPctE=0,nrCritE=0,totalMaxE=0;
+      (sab?.sectiuni||[]).forEach((sect,si)=>{
+        (sect.criterii||[]).forEach((cr,ci)=>{
+          if(cr.tip==='nota1-5'){
+            const v=rasp[`${si}_${ci}`];
+            const maxN=(cr.niveluri&&cr.niveluri.length)?Math.max(...cr.niveluri):5;
+            totalMaxE+=maxN;nrCritE++;
+            if(v!=null) totalPctE+=Number(v);
+          }
+        });
+      });
+      const pragFBe=nrCritE>0?totalMaxE-2:18;
+      const pragBe=nrCritE>0?4*nrCritE:15;
+      const pragMe=nrCritE>0?3*nrCritE:10;
+      const pragSe=nrCritE>0?2*nrCritE:6;
+      const pragNe=nrCritE>0?1*nrCritE:1;
+      function getCalifEval(t){
+        if(t>=pragFBe) return 'FOARTE BINE';
+        if(t>=pragBe)  return 'BINE';
+        if(t>=pragMe)  return 'MEDIU';
+        if(t>=pragSe)  return 'SATISFACATOR';
+        if(t>=pragNe)  return 'NESATISFACATOR';
+        return '—';
+      }
+      const calif=nrCritE>0?getCalifEval(totalPctE):(ultimaEval.scor_general!=null?Number(ultimaEval.scor_general).toFixed(1)+'p':'—');
+      const califColors={'FOARTE BINE':'var(--green)','BINE':'#16a34a','MEDIU':'var(--amber)','SATISFACATOR':'var(--orange)','NESATISFACATOR':'var(--red)','—':'var(--text3)'};
+      const califColor=califColors[calif]||'var(--text3)';
+      const perioadaEvalStr=ultimaEval.raspunsuri?.__perioada__||(ultimaEval.data_evaluarii?ultimaEval.data_evaluarii.slice(0,7):'');
+      evalHtml=`<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg1);border:1px solid var(--border);border-radius:20px;padding:2px 10px;font-size:12px;font-weight:500">
+        🏅 Ultima evaluare${perioadaEvalStr?' ('+perioadaEvalStr+')':''}:
+        <b style="color:${califColor};font-weight:700">${calif}</b>
+        <span style="font-size:10px;color:var(--text3)">(${ultimaEval.status==='semnat'?'semnată':'finalizată'})</span>
+      </span>`;
+    }
+
+    // Pontaje în perioada selectată: AB, CO, CM, INV
+    let pontajInfoHtml='';
+    const tipLabel={AB:'Absențe nemotivate',CO:'Concediu odihnă',CM:'Concediu medical',INV:'Învoiri',CFP:'Concediu fără plată'};
+    const tipColor={AB:'var(--red)',CO:'var(--navy)',CM:'var(--amber)',INV:'var(--purple)',CFP:'var(--slate)'};
+    const tipEmoji={AB:'⚠️',CO:'🏖️',CM:'🏥',INV:'🕐',CFP:'📋'};
+    const pStart=document.getElementById('prod-data-start').value;
+    const pMod=document.getElementById('prod-mod-perioada').value;
+    const pEnd=pMod==='interval'?(document.getElementById('prod-data-end').value||pStart):pStart;
+    const {data:pontPeriada}=await sb.from('pontaj')
+      .select('tip,data')
+      .eq('angajat_id',angajatFiltrat.id)
+      .gte('data',pStart).lte('data',pEnd)
+      .in('tip',['AB','CO','CM','INV','CFP']);
+    const contorTip={};
+    (pontPeriada||[]).forEach(p=>{contorTip[p.tip]=(contorTip[p.tip]||0)+1;});
+    const tipuriExist=Object.keys(contorTip).sort();
+    if(tipuriExist.length){
+      pontajInfoHtml=`<span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">
+        📅 Pontaj:
+        ${tipuriExist.map(t=>`<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg1);border:1px solid var(--border);border-radius:20px;padding:2px 9px;font-size:12px;font-weight:500">
+          ${tipEmoji[t]||''} <span style="color:${tipColor[t]||'var(--text2)'}">${tipLabel[t]||t}:</span> <b>${contorTip[t]}</b> zi${contorTip[t]>1?'le':''}
+        </span>`).join('')}
+      </span>`;
+    }
+
+    const extraHtml=(evalHtml||pontajInfoHtml)
+      ?`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center">${evalHtml}${pontajInfoHtml}</div>`
+      :'';
+
+    rezumatEl.innerHTML=`<div style="background:var(--navy-ll);border:1px solid var(--border);border-radius:var(--r2);padding:.75rem 1rem">
+      <div style="font-size:18px;font-weight:800;color:var(--navy);text-decoration:underline;text-underline-offset:3px;margin-bottom:4px">
+        Raport de monitorizare a eficienței pentru ${nume}
+      </div>
+      <div style="font-size:13px;font-weight:500;color:var(--text2);line-height:1.6">
+        <b>${totalQty}</b> piese · Timp raportat <b>${fmtMinutes(totalRaportat)}</b> · Timp normat <b>${fmtMinutes(totalNormat)}</b> · Eficiență <b style="color:${effColor};font-size:15px">${effTxt}%</b>
+      </div>
+      ${extraHtml}
+    </div>`;
     rezumatEl.style.display='block';
   } else {
     rezumatEl.innerHTML='';rezumatEl.style.display='none';
