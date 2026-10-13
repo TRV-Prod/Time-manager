@@ -3919,35 +3919,73 @@ async function diagProductieBD(){
     const excelEventIds=[240356,240367,240369,248434,248506,248511,248515,248584,248727,248728,248883,326493,338205,338209,342160,345848,348932,348935,348937,350170,350685,350686,352749,352751,354693,354933,354935,355286,355547,356397,356403,356404,356406,356472,356474,356851,356854,356857,357834,357906,359686,359848,359851,361245,361259,362268,362284,362344,362403,362507,362512,362515,362524,362787,363135,363419,363461,363463,363464,363466,363711,363712,363717,363718,363721,363772,363774,363805,364258,364277,365144,365531,365544,365546,365752,366787];
     const excelSet=new Set(excelEventIds.map(String));
 
-    // Găsim angajatul HREBENCIUC în lista de angajați
-    const {data:angajati}=await sb.from('angajati').select('id,nume,employee_no').ilike('nume','%HREBENCIUC%');
-    if(!angajati||angajati.length===0){resEl.textContent='❌ Angajatul HREBENCIUC nu a fost găsit în tabelul angajati.';return;}
+    let lines=[];
 
-    let lines=[`👤 Angajați găsiți cu HREBENCIUC: ${angajati.map(a=>a.nume+' (id='+a.id+', no='+a.employee_no+')').join(', ')}`];
+    // Caută angajatul HREBENCIUC în tabela angajati (după nume sau employee_no)
+    const {data:angajatiNume}=await sb.from('angajati').select('id,nume,employee_no').ilike('nume','%HREBENCIUC%');
+    const {data:angajatiNo}=await sb.from('angajati').select('id,nume,employee_no').eq('employee_no','70000413');
+    const angajati=[...new Map([...(angajatiNume||[]),...(angajatiNo||[])].map(a=>[a.id,a])).values()];
 
-    // Interoghează productie_evenimente pentru luna septembrie 2026
-    const {data:rows,error}=await sb.from('productie_evenimente')
-      .select('id,event,transaction_dt,product,op_no,workcenter_name,manufact_qty,employee_no,angajat_id')
-      .or(angajati.map(a=>'angajat_id.eq.'+a.id).join(','))
+    if(angajati.length>0){
+      lines.push(`👤 Găsit în tabela angajati: ${angajati.map(a=>a.nume+' (id='+a.id+', no='+a.employee_no+')').join(', ')}`);
+    } else {
+      lines.push(`⚠️ Angajatul NU există în tabela angajati (employee_no 70000413 / HREBENCIUC nu a fost găsit)`);
+    }
+
+    // Interoghează productie_evenimente după employee_no='70000413' (independent de angajat_id)
+    let q=sb.from('productie_Evenimente')
+      .select('id,event,transaction_dt,product,op_no,workcenter_name,manufact_qty,employee_no,employee_name,angajat_id')
+      .eq('employee_no','70000413')
       .gte('transaction_dt','20260901')
       .lte('transaction_dt','20260930')
       .order('transaction_dt',{ascending:true});
 
-    if(error){resEl.textContent='❌ Eroare BD: '+JSON.stringify(error);return;}
+    // Dacă angajat_id există, interoghează și după el (union logic via OR)
+    const angIds=angajati.map(a=>a.id);
+    let qById=null;
+    if(angIds.length>0){
+      const {data:rowsById}=await sb.from('productie_evenimente')
+        .select('id,event,transaction_dt,product,op_no,workcenter_name,manufact_qty,employee_no,employee_name,angajat_id')
+        .in('angajat_id',angIds)
+        .gte('transaction_dt','20260901')
+        .lte('transaction_dt','20260930');
+      qById=rowsById||[];
+    }
+
+    const {data:rowsByNo,error}=await sb.from('productie_evenimente')
+      .select('id,event,transaction_dt,product,op_no,workcenter_name,manufact_qty,employee_no,employee_name,angajat_id')
+      .eq('employee_no','70000413')
+      .gte('transaction_dt','20260901')
+      .lte('transaction_dt','20260930')
+      .order('transaction_dt',{ascending:true});
+
+    if(error){resEl.textContent='❌ Eroare BD (employee_no query): '+JSON.stringify(error);return;}
+
+    // Combină rezultatele (by employee_no + by angajat_id), deduplicat după id BD
+    const allRowsMap=new Map();
+    (rowsByNo||[]).forEach(r=>allRowsMap.set(r.id,r));
+    (qById||[]).forEach(r=>allRowsMap.set(r.id,r));
+    const rows=[...allRowsMap.values()].sort((a,b)=>(a.transaction_dt||'').localeCompare(b.transaction_dt||''));
+
+    // Distribuție employee_name în BD
+    const nameCount={};
+    rows.forEach(r=>{ const n=r.employee_name||r.employee_no||'?'; nameCount[n]=(nameCount[n]||0)+1; });
+    lines.push(`\n🏷️ Nume/no în productie_evenimente: ${Object.entries(nameCount).map(([n,c])=>n+' ('+c+')').join(', ')}`);
+    lines.push(`   (query by employee_no='70000413': ${(rowsByNo||[]).length} | by angajat_id: ${(qById||[]).length})`);
 
     lines.push(`\n📊 Rânduri în BD (202609): ${rows.length}`);
     lines.push(`📄 Rânduri în Excel (202609): ${excelEventIds.length}`);
     lines.push(`📈 Diferență: ${rows.length - excelEventIds.length} rânduri extra în BD`);
 
     // Mapăm event IDs din BD
-    const bdEvents=rows.map(r=>({event:String(r.event||r.id),dt:r.transaction_dt,product:r.product,op:r.op_no,wc:r.workcenter_name,qty:r.manufact_qty,ang_id:r.angajat_id}));
+    const bdEvents=rows.map(r=>({event:String(r.event||r.id),dt:r.transaction_dt,product:r.product,op:r.op_no,wc:r.workcenter_name,qty:r.manufact_qty,ang_id:r.angajat_id,ang_no:r.employee_no}));
     const bdEventIds=new Set(bdEvents.map(e=>e.event));
 
     // Extra în BD față de Excel
     const extraInBD=bdEvents.filter(e=>!excelSet.has(e.event));
     lines.push(`\n🔴 Extra în BD (nu sunt în Excel): ${extraInBD.length}`);
     extraInBD.forEach(e=>{
-      lines.push(`  Event ${e.event} | ${e.dt} | ${e.product||'?'} op${e.op||'?'} | ${e.wc||'?'} | qty=${e.qty||0} | ang_id=${e.ang_id||'?'}`);
+      lines.push(`  Event ${e.event} | ${e.dt} | ${e.product||'?'} op${e.op||'?'} | ${e.wc||'?'} | qty=${e.qty||0} | ang_id=${e.ang_id||'?'} | emp_no=${e.ang_no||'?'}`);
     });
 
     // Lipsesc din BD față de Excel
