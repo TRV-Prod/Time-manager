@@ -104,6 +104,12 @@ select.form-control{cursor:pointer}
 .table-wrap{overflow-x:auto;border-radius:var(--r);border:1px solid var(--border)}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:9px 14px;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;background:var(--slate-ll);border-bottom:1px solid var(--border);white-space:nowrap}
+.prod-th{cursor:pointer;user-select:none;position:relative;padding-right:22px}
+.prod-th:hover{background:var(--border);color:var(--navy)}
+.prod-th::after{content:'↕';position:absolute;right:7px;top:50%;transform:translateY(-50%);font-size:10px;opacity:.4}
+.prod-th.sort-asc::after{content:'↑';opacity:1;color:var(--orange)}
+.prod-th.sort-desc::after{content:'↓';opacity:1;color:var(--orange)}
+.prod-tr-hidden{display:none}
 td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text)}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--slate-ll)}
@@ -668,12 +674,20 @@ tr:hover td{background:var(--slate-ll)}
         </div>
 
         <div class="card">
-          <div class="card-title">Detaliu pe operații</div>
-          <div class="table-wrap"><table>
-            <thead><tr>
-              <th class="admin-only" style="display:none">Angajat</th>
-              <th>Data</th><th>Workcenter</th><th>Produs</th><th>Cant.</th>
-              <th>Timp normat</th><th>Timp raportat</th><th>Eficiență</th>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:.5rem">
+            <div class="card-title" style="margin-bottom:0">Detaliu pe operații</div>
+            <input id="prod-tabel-search" type="text" placeholder="🔍 Caută în tabel…" oninput="prodTabelFilter()" style="border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;width:200px;outline:none;background:var(--bg1);color:var(--text1)"/>
+          </div>
+          <div class="table-wrap"><table id="prod-tabel">
+            <thead><tr id="prod-thead-row">
+              <th class="admin-only prod-th" data-col="0" style="display:none">Angajat</th>
+              <th class="prod-th" data-col="1">Data</th>
+              <th class="prod-th" data-col="2">Workcenter</th>
+              <th class="prod-th" data-col="3">Produs</th>
+              <th class="prod-th" data-col="4">Cant.</th>
+              <th class="prod-th" data-col="5">Timp normat</th>
+              <th class="prod-th" data-col="6">Timp raportat</th>
+              <th class="prod-th" data-col="7">Eficiență</th>
             </tr></thead>
             <tbody id="prod-tbody"></tbody>
           </table></div>
@@ -3825,6 +3839,71 @@ async function renderProductieRaport(){
 let prodChartInstance=null;
 let prodChartData={totalNormat:0,totalRaportat:0,totalPontat:0,perZi:{}};
 
+// ── Sort & Filter pentru tabelul Detaliu pe operații ───────────────────
+let prodTabelSort={col:-1,dir:1}; // col=-1 = fără sort activ
+
+function prodTabelInitSort(){
+  document.querySelectorAll('#prod-thead-row .prod-th').forEach(th=>{
+    th.addEventListener('click',()=>{
+      const col=parseInt(th.dataset.col);
+      if(prodTabelSort.col===col){
+        prodTabelSort.dir*=-1;
+      } else {
+        prodTabelSort.col=col;
+        prodTabelSort.dir=1;
+      }
+      // Actualizăm clasele vizuale
+      document.querySelectorAll('#prod-thead-row .prod-th').forEach(t=>{
+        t.classList.remove('sort-asc','sort-desc');
+      });
+      th.classList.add(prodTabelSort.dir===1?'sort-asc':'sort-desc');
+      prodTabelApply();
+    });
+  });
+}
+
+function prodTabelFilter(){
+  prodTabelApply();
+}
+
+function prodTabelApply(){
+  const q=(document.getElementById('prod-tabel-search')?.value||'').trim().toLowerCase();
+  const {col,dir}=prodTabelSort;
+  const tbody=document.getElementById('prod-tbody');
+  if(!tbody) return;
+
+  const rows=[...tbody.querySelectorAll('tr')];
+
+  // Filtrare: ascunde rânduri care nu conțin textul căutat
+  rows.forEach(tr=>{
+    if(!q){tr.classList.remove('prod-tr-hidden');return;}
+    const txt=tr.textContent.toLowerCase();
+    tr.classList.toggle('prod-tr-hidden',!txt.includes(q));
+  });
+
+  // Sortare: reordonăm DOM-ul rândurilor vizibile + ascunse separat
+  if(col>=0){
+    const visible=rows.filter(tr=>!tr.classList.contains('prod-tr-hidden'));
+    const hidden=rows.filter(tr=>tr.classList.contains('prod-tr-hidden'));
+
+    visible.sort((a,b)=>{
+      const ca=a.querySelectorAll('td')[col];
+      const cb=b.querySelectorAll('td')[col];
+      if(!ca||!cb) return 0;
+      const va=ca.dataset.sort!==undefined?ca.dataset.sort:ca.textContent.trim();
+      const vb=cb.dataset.sort!==undefined?cb.dataset.sort:cb.textContent.trim();
+      // Numeric vs string
+      const na=parseFloat(va.replace(/[^0-9.,\-]/g,'').replace(',','.'));
+      const nb=parseFloat(vb.replace(/[^0-9.,\-]/g,'').replace(',','.'));
+      if(!isNaN(na)&&!isNaN(nb)) return (na-nb)*dir;
+      return va.localeCompare(vb,'ro')*dir;
+    });
+
+    // Reinserăm în ordine: vizibile sortate, apoi ascunse
+    [...visible,...hidden].forEach(tr=>tbody.appendChild(tr));
+  }
+}
+
 async function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataStart,dataEnd,pontMapPerZi){
   const isAd=isAdmin();
   let totalNormat=0,totalRaportat=0,totalQty=0;
@@ -3844,13 +3923,13 @@ async function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataSta
     const effColor=eficienta==null?'var(--text3)':eficienta>=90?'var(--green)':eficienta>=70?'var(--amber)':'var(--red)';
     return `<tr>
       ${isAd?`<td class="admin-only">${ang?angNume(ang):(r.employee_no||'—')}</td>`:''}
-      <td>${fmtDate(r.transaction_dt)}</td>
+      <td data-sort="${r.transaction_dt||''}">${fmtDate(r.transaction_dt)}</td>
       <td>${r.workcenter_name||r.workcenter||'—'}</td>
       <td><div style="font-weight:500">${r.product||'—'}</div><div style="font-size:11px;color:var(--text3)">${r.product_desc||''}</div></td>
-      <td>${r.manufact_qty||0}</td>
-      <td>${fmtMinutes(timpNormat)}</td>
-      <td>${fmtMinutes(timpRaportat)}</td>
-      <td style="font-weight:700;color:${effColor}">${eficienta!=null?eficienta.toFixed(0)+'%':'—'}</td>
+      <td data-sort="${r.manufact_qty||0}">${r.manufact_qty||0}</td>
+      <td data-sort="${timpNormat}">${fmtMinutes(timpNormat)}</td>
+      <td data-sort="${timpRaportat}">${fmtMinutes(timpRaportat)}</td>
+      <td data-sort="${eficienta!=null?eficienta.toFixed(2):'-1'}" style="font-weight:700;color:${effColor}">${eficienta!=null?eficienta.toFixed(0)+'%':'—'}</td>
     </tr>`;
   }).join(''):`<tr><td colspan="${isAd?8:7}" style="text-align:center;color:var(--text3);padding:1.5rem">Nicio înregistrare găsită pentru perioada selectată.</td></tr>`;
 
@@ -3980,6 +4059,10 @@ async function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataSta
 
   prodChartData={totalNormat,totalRaportat,totalPontat:totalPontatMin,perZi};
   renderProductieChart();
+  // Inițializăm sort-ul (reset la primul render după date noi)
+  prodTabelSort={col:-1,dir:1};
+  document.querySelectorAll('#prod-thead-row .prod-th').forEach(t=>t.classList.remove('sort-asc','sort-desc'));
+  prodTabelInitSort();
 }
 function fmtMinutes(min){
   if(!min) return '0m';
