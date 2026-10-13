@@ -621,11 +621,10 @@ tr:hover td{background:var(--slate-ll)}
           <div id="prod-import-status" style="display:none;margin-top:.5rem"></div>
 
           <div style="display:flex;gap:6px;margin-top:1rem;flex-wrap:wrap">
-            <button class="btn btn-sm" onclick="prodSetPerioadaRapida('azi')">Azi</button>
             <button class="btn btn-sm" onclick="prodSetPerioadaRapida('ultima_zi')">Ultima zi lucrată</button>
             <button class="btn btn-sm" onclick="prodSetPerioadaRapida('saptamana')">Ultima săptămână</button>
             <button class="btn btn-sm" onclick="prodSetPerioadaRapida('luna')">Ultima lună</button>
-            <button class="btn btn-sm" onclick="prodSetPerioadaRapida('an')">Ultimul an</button>
+            <button class="btn btn-sm" onclick="prodSetPerioadaRapida('ytd')">Ultimul an (YTD)</button>
           </div>
 
           <div class="pont-controls" style="margin-top:.75rem">
@@ -3481,21 +3480,24 @@ function exportProductiePDFGenereaza(includeChart,includeTable){
       <table><thead><tr>${theadRow}</tr></thead><tbody>${tbody}</tbody></table>`;
   }
 
+  // Orientare: Landscape dacă avem doar grafic (fără tabel), Portrait dacă avem tabel
+  const pageOrient=(includeChart&&!includeTable)?'landscape':'portrait';
+
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titlu}</title>
   <style>
-    @page{size:A4 portrait;margin:12mm}
+    @page{size:A4 ${pageOrient};margin:10mm}
     *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
-    body{padding:0;font-size:12px;color:#1a2744}
-    h1{font-size:16px;font-weight:700;margin-bottom:4px}
-    .sub{font-size:11px;color:#6b7fa3;margin-bottom:14px}
-    .rezumat{background:#eef1f8;border-radius:6px;padding:10px 12px;font-size:13px;font-weight:500;line-height:1.6;margin-bottom:14px}
-    .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px}
-    .stat{background:#f8f9fc;border:1px solid #d8dee8;border-radius:6px;padding:8px 10px}
-    .stat-val{font-size:14px;font-weight:700;color:#1a2744;margin-top:4px}
-    .stat-lbl{font-size:9px;color:#6b7fa3;text-transform:uppercase;letter-spacing:.04em}
-    table{width:100%;border-collapse:collapse;font-size:10px}
-    th{background:#eef1f8;color:#1a2744;font-weight:700;text-align:left;padding:5px 7px;border-bottom:2px solid #d8dee8}
-    td{padding:4px 7px;border-bottom:1px solid #eef1f8}
+    body{padding:0;font-size:11px;color:#1a2744}
+    h1{font-size:14px;font-weight:700;margin-bottom:3px}
+    .sub{font-size:10px;color:#6b7fa3;margin-bottom:10px}
+    .rezumat{background:#eef1f8;border-radius:5px;padding:7px 10px;font-size:11px;font-weight:500;line-height:1.5;margin-bottom:10px}
+    .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:10px}
+    .stat{background:#f8f9fc;border:1px solid #d8dee8;border-radius:5px;padding:5px 8px}
+    .stat-val{font-size:12px;font-weight:700;color:#1a2744;margin-top:2px}
+    .stat-lbl{font-size:8px;color:#6b7fa3;text-transform:uppercase;letter-spacing:.04em}
+    table{width:100%;border-collapse:collapse;font-size:9px}
+    th{background:#eef1f8;color:#1a2744;font-weight:700;text-align:left;padding:4px 6px;border-bottom:2px solid #d8dee8}
+    td{padding:3px 6px;border-bottom:1px solid #eef1f8}
     tr:nth-child(even) td{background:#fafbfc}
     .admin-only{display:none}
   </style></head><body>
@@ -3670,30 +3672,48 @@ function prodOnWorkcenterChange(){
 function prodFiltreazaAngajati(){prodActualizeazaSelectori('none');}
 
 // Butoane rapide de perioadă
-function prodSetPerioadaRapida(tip){
+async function prodSetPerioadaRapida(tip){
   const today=new Date();
   const modSel=document.getElementById('prod-mod-perioada');
   const start=document.getElementById('prod-data-start');
   const end=document.getElementById('prod-data-end');
-  if(tip==='azi'){
-    modSel.value='zi';start.value=fmtDateISO(today);
-  } else if(tip==='ultima_zi'){
+
+  if(tip==='ultima_zi'){
+    // Ultima zi pentru care există înregistrări în baza de date (indiferent de filtrele curente)
     modSel.value='zi';
-    const ultima=allProductieEv.length?allProductieEv.reduce((m,r)=>r.transaction_dt>m?r.transaction_dt:m,allProductieEv[0].transaction_dt):fmtDateISO(today);
-    start.value=ultima;
+    let q=sb.from('productie_evenimente').select('transaction_dt').order('transaction_dt',{ascending:false}).limit(1);
+    if(!isAdmin()&&currentProfile?.angajat_id) q=q.eq('angajat_id',currentProfile.angajat_id);
+    const {data:ult}=await q;
+    const ultimaZi=ult?.[0]?.transaction_dt||fmtDateISO(today);
+    start.value=ultimaZi;
+
   } else if(tip==='saptamana'){
+    // Săptămâna ISO anterioară celei curente (Lu-Vi)
     modSel.value='interval';
-    const d=new Date(today);d.setDate(d.getDate()-6);
-    start.value=fmtDateISO(d);end.value=fmtDateISO(today);
+    const zi=today.getDay()||7; // 1=Lu … 7=Du
+    // Luni săptămâna trecută
+    const luniPrec=new Date(today);luniPrec.setDate(today.getDate()-zi-6);
+    // Vineri săptămâna trecută
+    const vineriPrec=new Date(luniPrec);vineriPrec.setDate(luniPrec.getDate()+4);
+    start.value=fmtDateISO(luniPrec);
+    end.value=fmtDateISO(vineriPrec);
+
   } else if(tip==='luna'){
+    // Luna calendaristică anterioară (01 – ultimul zi)
     modSel.value='interval';
-    const d=new Date(today);d.setMonth(d.getMonth()-1);
-    start.value=fmtDateISO(d);end.value=fmtDateISO(today);
-  } else if(tip==='an'){
+    const primaLunaAnt=new Date(today.getFullYear(),today.getMonth()-1,1);
+    const ultimaLunaAnt=new Date(today.getFullYear(),today.getMonth(),0);
+    start.value=fmtDateISO(primaLunaAnt);
+    end.value=fmtDateISO(ultimaLunaAnt);
+
+  } else if(tip==='ytd'){
+    // De la 01.01 al anului curent până ieri
     modSel.value='interval';
-    const d=new Date(today);d.setFullYear(d.getFullYear()-1);
-    start.value=fmtDateISO(d);end.value=fmtDateISO(today);
+    const ieri=new Date(today);ieri.setDate(today.getDate()-1);
+    start.value=`${today.getFullYear()}-01-01`;
+    end.value=fmtDateISO(ieri);
   }
+
   saveFilters('prod',{mod:modSel.value,dataStart:start.value,dataEnd:end.value||''});
   document.getElementById('prod-data-end-wrap').style.display=modSel.value==='interval'?'flex':'none';
   renderProductieRaport();
@@ -3970,7 +3990,63 @@ function renderProductieChart(){
     });
   } else if(tip==='linie'){
     const zile=Object.keys(perZi).sort();
-    // Plugin inline pentru datalabels pe graficul de linie
+
+    // ── Detectăm dacă avem mai mult de o lună ──────────────────────────
+    const luniUniq=[...new Set(zile.map(z=>z.slice(0,7)))]; // ['2024-09','2024-10',...]
+    const multiLuna=luniUniq.length>1;
+
+    // Culori de fundal pe benzi lunare (alternante)
+    const LUNA_CULORI=['rgba(91,79,207,.07)','rgba(232,97,10,.05)','rgba(26,122,74,.06)','rgba(100,116,139,.06)'];
+    const LUNA_NAMES=['Ian','Feb','Mar','Apr','Mai','Iun','Iul','Aug','Sep','Oct','Nov','Dec'];
+
+    // Plugin: bare verticale la granițele dintre luni + etichetă lună pe grafic
+    const monthBandsPlugin={
+      id:'monthBands',
+      beforeDraw(chart){
+        if(!multiLuna) return;
+        const {ctx,chartArea:{left,right,top,bottom},scales:{x}}=chart;
+        if(!x) return;
+        ctx.save();
+        // Desenăm benzi colorate pe fiecare lună
+        luniUniq.forEach((luna,li)=>{
+          const ziLuna=zile.filter(z=>z.slice(0,7)===luna);
+          if(!ziLuna.length) return;
+          const iFirst=zile.indexOf(ziLuna[0]);
+          const iLast=zile.indexOf(ziLuna[ziLuna.length-1]);
+          const xFirst=x.getPixelForValue(iFirst);
+          const xLast=x.getPixelForValue(iLast);
+          const bandLeft=li===0?left:xFirst-((xFirst-x.getPixelForValue(iFirst-1))/2);
+          const bandRight=li===luniUniq.length-1?right:xLast+((x.getPixelForValue(iLast+1)-xLast)/2);
+          ctx.fillStyle=LUNA_CULORI[li%LUNA_CULORI.length];
+          ctx.fillRect(bandLeft,top,bandRight-bandLeft,bottom-top);
+          // Etichetă lună
+          const [an,lNr]=luna.split('-');
+          ctx.fillStyle='rgba(100,116,139,.7)';
+          ctx.font='bold 10px Arial';
+          ctx.textAlign='center';
+          ctx.textBaseline='top';
+          ctx.fillText(LUNA_NAMES[parseInt(lNr,10)-1]+' '+an,(bandLeft+bandRight)/2,top+3);
+        });
+        // Linii verticale de separare între luni
+        for(let li=1;li<luniUniq.length;li++){
+          const luna=luniUniq[li];
+          const primaZi=zile.find(z=>z.slice(0,7)===luna);
+          if(!primaZi) continue;
+          const iFirst=zile.indexOf(primaZi);
+          const xPrev=x.getPixelForValue(iFirst-1);
+          const xCurr=x.getPixelForValue(iFirst);
+          const xLine=(xPrev+xCurr)/2;
+          ctx.strokeStyle='rgba(100,116,139,.35)';
+          ctx.lineWidth=1.5;
+          ctx.setLineDash([4,3]);
+          ctx.beginPath();ctx.moveTo(xLine,top);ctx.lineTo(xLine,bottom);ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.restore();
+      }
+    };
+
+    // Plugin inline datalabels
     const datalabelsPlugin={
       id:'lineLabels',
       afterDatasetsDraw(chart){
@@ -3982,8 +4058,8 @@ function renderProductieChart(){
             const val=ds.data[i];
             if(!val) return;
             ctx.save();
-            ctx.translate(pt.x, pt.y-8);
-            ctx.rotate(-Math.PI/2); // rotație 90° — text vertical, citit de jos în sus
+            ctx.translate(pt.x,pt.y-8);
+            ctx.rotate(-Math.PI/2);
             ctx.fillStyle=ds.borderColor;
             ctx.font='bold 10px Arial';
             ctx.textAlign='left';
@@ -3994,14 +4070,15 @@ function renderProductieChart(){
         });
       }
     };
+
     prodChartInstance=new Chart(ctx,{
       type:'line',
       data:{
         labels:zile.map(z=>fmtDate(z)),
         datasets:[
-          {label:'Timp pontat',data:zile.map(z=>perZi[z].pontat||0),borderColor:culPontat,backgroundColor:culPontat+'22',tension:.3,fill:true,pointRadius:4,pointHoverRadius:6},
-          {label:'Timp raportat',data:zile.map(z=>perZi[z].raportat||0),borderColor:culRaportat,backgroundColor:culRaportat+'22',tension:.3,fill:true,pointRadius:4,pointHoverRadius:6},
-          {label:'Timp normat',data:zile.map(z=>perZi[z].normat||0),borderColor:culNormat,backgroundColor:culNormat+'22',tension:.3,fill:true,pointRadius:4,pointHoverRadius:6}
+          {label:'Timp pontat',data:zile.map(z=>perZi[z].pontat||0),borderColor:culPontat,backgroundColor:'transparent',tension:.3,fill:false,pointRadius:3,pointHoverRadius:6,borderWidth:2},
+          {label:'Timp raportat',data:zile.map(z=>perZi[z].raportat||0),borderColor:culRaportat,backgroundColor:'transparent',tension:.3,fill:false,pointRadius:3,pointHoverRadius:6,borderWidth:2},
+          {label:'Timp normat',data:zile.map(z=>perZi[z].normat||0),borderColor:culNormat,backgroundColor:'transparent',tension:.3,fill:false,pointRadius:3,pointHoverRadius:6,borderWidth:2}
         ]
       },
       options:{
@@ -4012,7 +4089,7 @@ function renderProductieChart(){
             callbacks:{
               label:c=>c.dataset.label+': '+fmtMinutes(c.raw),
               afterBody(items){
-                const zi=Object.keys(perZi).sort()[items[0]?.dataIndex];
+                const zi=zile[items[0]?.dataIndex];
                 if(!zi) return [];
                 const d=perZi[zi];
                 const eff=d.raportat>0?((d.normat/d.raportat)*100).toFixed(0)+'%':'—';
@@ -4023,10 +4100,10 @@ function renderProductieChart(){
         },
         scales:{
           y:{ticks:{callback:v=>fmtMinutes(v)},grid:{color:'#eef1f8'}},
-          x:{grid:{display:false}}
+          x:{grid:{display:false},ticks:{maxRotation:45,font:{size:10}}}
         }
       },
-      plugins:[datalabelsPlugin]
+      plugins:[monthBandsPlugin,datalabelsPlugin]
     });
   }
 }
