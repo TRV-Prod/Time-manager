@@ -676,8 +676,12 @@ tr:hover td{background:var(--slate-ll)}
         <div class="card">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:.5rem">
             <div class="card-title" style="margin-bottom:0">Detaliu pe operații</div>
-            <input id="prod-tabel-search" type="text" placeholder="🔍 Caută în tabel…" oninput="prodTabelFilter()" style="border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;width:200px;outline:none;background:var(--bg1);color:var(--text1)"/>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <input id="prod-tabel-search" type="text" placeholder="🔍 Caută în tabel…" oninput="prodTabelFilter()" style="border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;width:200px;outline:none;background:var(--bg1);color:var(--text1)"/>
+              <button class="admin-only" onclick="diagProductieBD()" style="display:none;background:var(--slate);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600">🔍 Diag. BD</button>
+            </div>
           </div>
+          <div id="prod-diag-result" style="display:none;margin-bottom:.75rem;padding:.6rem .75rem;border-radius:6px;background:var(--slate-ll);border:1px solid var(--border);font-size:12px;white-space:pre-wrap;font-family:monospace;max-height:300px;overflow-y:auto"></div>
           <div class="table-wrap"><table id="prod-tabel">
             <thead><tr id="prod-thead-row">
               <th class="admin-only prod-th" data-col="0" style="display:none">Angajat</th>
@@ -3901,6 +3905,73 @@ function prodTabelApply(){
 
     // Reinserăm în ordine: vizibile sortate, apoi ascunse
     [...visible,...hidden].forEach(tr=>tbody.appendChild(tr));
+  }
+}
+
+// ── Diagnosticare BD producție ─────────────────────────────────────────────
+async function diagProductieBD(){
+  const resEl=document.getElementById('prod-diag-result');
+  resEl.style.display='block';
+  resEl.textContent='⏳ Se interoghează baza de date...';
+
+  try{
+    // Event IDs din Excel (HREBENCIUC DUMITRU-DORIN, 202609) — 76 intrări confirmate
+    const excelEventIds=[240356,240367,240369,248434,248506,248511,248515,248584,248727,248728,248883,326493,338205,338209,342160,345848,348932,348935,348937,350170,350685,350686,352749,352751,354693,354933,354935,355286,355547,356397,356403,356404,356406,356472,356474,356851,356854,356857,357834,357906,359686,359848,359851,361245,361259,362268,362284,362344,362403,362507,362512,362515,362524,362787,363135,363419,363461,363463,363464,363466,363711,363712,363717,363718,363721,363772,363774,363805,364258,364277,365144,365531,365544,365546,365752,366787];
+    const excelSet=new Set(excelEventIds.map(String));
+
+    // Găsim angajatul HREBENCIUC în lista de angajați
+    const {data:angajati}=await sb.from('angajati').select('id,nume,employee_no').ilike('nume','%HREBENCIUC%');
+    if(!angajati||angajati.length===0){resEl.textContent='❌ Angajatul HREBENCIUC nu a fost găsit în tabelul angajati.';return;}
+
+    let lines=[`👤 Angajați găsiți cu HREBENCIUC: ${angajati.map(a=>a.nume+' (id='+a.id+', no='+a.employee_no+')').join(', ')}`];
+
+    // Interoghează productie_evenimente pentru luna septembrie 2026
+    const {data:rows,error}=await sb.from('productie_evenimente')
+      .select('id,event,transaction_dt,product,op_no,workcenter_name,manufact_qty,employee_no,angajat_id')
+      .or(angajati.map(a=>'angajat_id.eq.'+a.id).join(','))
+      .gte('transaction_dt','20260901')
+      .lte('transaction_dt','20260930')
+      .order('transaction_dt',{ascending:true});
+
+    if(error){resEl.textContent='❌ Eroare BD: '+JSON.stringify(error);return;}
+
+    lines.push(`\n📊 Rânduri în BD (202609): ${rows.length}`);
+    lines.push(`📄 Rânduri în Excel (202609): ${excelEventIds.length}`);
+    lines.push(`📈 Diferență: ${rows.length - excelEventIds.length} rânduri extra în BD`);
+
+    // Mapăm event IDs din BD
+    const bdEvents=rows.map(r=>({event:String(r.event||r.id),dt:r.transaction_dt,product:r.product,op:r.op_no,wc:r.workcenter_name,qty:r.manufact_qty,ang_id:r.angajat_id}));
+    const bdEventIds=new Set(bdEvents.map(e=>e.event));
+
+    // Extra în BD față de Excel
+    const extraInBD=bdEvents.filter(e=>!excelSet.has(e.event));
+    lines.push(`\n🔴 Extra în BD (nu sunt în Excel): ${extraInBD.length}`);
+    extraInBD.forEach(e=>{
+      lines.push(`  Event ${e.event} | ${e.dt} | ${e.product||'?'} op${e.op||'?'} | ${e.wc||'?'} | qty=${e.qty||0} | ang_id=${e.ang_id||'?'}`);
+    });
+
+    // Lipsesc din BD față de Excel
+    const lipsescDinBD=excelEventIds.filter(eid=>!bdEventIds.has(String(eid)));
+    lines.push(`\n🟡 Lipsesc din BD (sunt în Excel dar nu în BD): ${lipsescDinBD.length}`);
+    if(lipsescDinBD.length) lines.push('  '+lipsescDinBD.join(', '));
+
+    // Verificare duplicate în BD
+    const evCount={};
+    bdEvents.forEach(e=>{evCount[e.event]=(evCount[e.event]||0)+1;});
+    const dups=Object.entries(evCount).filter(([,c])=>c>1);
+    lines.push(`\n🔁 Duplicate event ID în BD: ${dups.length}`);
+    dups.forEach(([ev,c])=>lines.push(`  Event ${ev} apare de ${c} ori`));
+
+    // Distribuție pe zile în BD
+    lines.push('\n📅 Distribuție pe zile în BD:');
+    const perZiBD={};
+    bdEvents.forEach(e=>{perZiBD[e.dt]=(perZiBD[e.dt]||0)+1;});
+    Object.keys(perZiBD).sort().forEach(z=>lines.push(`  ${z}: ${perZiBD[z]} înregistrări`));
+
+    resEl.textContent=lines.join('\n');
+
+  } catch(err){
+    resEl.textContent='❌ Eroare: '+err.message;
   }
 }
 
