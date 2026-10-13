@@ -3504,9 +3504,15 @@ function exportProductiePDFGenereaza(includeChart,includeTable){
   const rezumatFaraTitlu=(()=>{
     const tmp=document.createElement('div');
     tmp.innerHTML=rezumatCurat;
-    // Eliminăm primul div care conține titlul subliniat (Raport de monitorizare...)
-    const firstDiv=tmp.querySelector('div');
-    if(firstDiv&&firstDiv.textContent.includes('Raport de monitorizare')) firstDiv.remove();
+    // Structura: containerul exterior > [div titlu 18px, div text eficienta, div badges]
+    // Eliminăm doar div-ul cu titlul "Raport de monitorizare..." (font-size:18px)
+    // Toate celelalte divuri (inclusiv textul cu piese/eficienta) rămân
+    const container=tmp.querySelector('div');
+    if(container){
+      const titluDiv=container.querySelector('div');
+      if(titluDiv&&titluDiv.textContent.includes('Raport de monitorizare')) titluDiv.remove();
+      return container.innerHTML;
+    }
     return tmp.innerHTML;
   })();
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titlu}</title>
@@ -3766,10 +3772,25 @@ async function renderProductieRaport(){
   if(!isAdmin()){
     if(!currentProfile?.angajat_id){renderProductieTable([]);return;}
     angajatFiltrat=allAngajati.find(a=>a.id===currentProfile.angajat_id);
-    q=q.eq('angajat_id',currentProfile.angajat_id);
+    // Caută și după angajat_id și după employee_no (pentru rânduri importate fără link la angajati)
+    const empNo=angajatFiltrat?.nr_matricol||angajatFiltrat?.employee_no||null;
+    if(empNo){
+      q=q.or(`angajat_id.eq.${currentProfile.angajat_id},employee_no.eq.${empNo}`);
+    } else {
+      q=q.eq('angajat_id',currentProfile.angajat_id);
+    }
   } else {
     const angSel=document.getElementById('prod-angajat-sel').value;
-    if(angSel){q=q.eq('angajat_id',angSel);angajatFiltrat=allAngajati.find(a=>a.id===angSel);}
+    if(angSel){
+      angajatFiltrat=allAngajati.find(a=>a.id===angSel);
+      // Caută și după angajat_id și după employee_no (pentru rânduri cu angajat_id=NULL la import)
+      const empNo=angajatFiltrat?.nr_matricol||angajatFiltrat?.employee_no||null;
+      if(empNo){
+        q=q.or(`angajat_id.eq.${angSel},employee_no.eq.${empNo}`);
+      } else {
+        q=q.eq('angajat_id',angSel);
+      }
+    }
     const sectSel=document.getElementById('prod-sectie-sel').value;
     if(sectSel){
       const idAngajatiSectie=allAngajati.filter(a=>a.sectie_id===sectSel).map(a=>a.id);
