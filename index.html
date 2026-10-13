@@ -676,22 +676,19 @@ tr:hover td{background:var(--slate-ll)}
         <div class="card">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:.5rem">
             <div class="card-title" style="margin-bottom:0">Detaliu pe operații</div>
-            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-              <input id="prod-tabel-search" type="text" placeholder="🔍 Caută în tabel…" oninput="prodTabelFilter()" style="border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;width:200px;outline:none;background:var(--bg1);color:var(--text1)"/>
-              <button class="admin-only" onclick="diagProductieBD()" style="display:none;background:var(--slate);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600">🔍 Diag. BD</button>
-            </div>
+            <input id="prod-tabel-search" type="text" placeholder="🔍 Caută în tabel…" oninput="prodTabelFilter()" style="border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;width:200px;outline:none;background:var(--bg1);color:var(--text1)"/>
           </div>
-          <div id="prod-diag-result" style="display:none;margin-bottom:.75rem;padding:.6rem .75rem;border-radius:6px;background:var(--slate-ll);border:1px solid var(--border);font-size:12px;white-space:pre-wrap;font-family:monospace;max-height:300px;overflow-y:auto"></div>
           <div class="table-wrap"><table id="prod-tabel">
             <thead><tr id="prod-thead-row">
               <th class="admin-only prod-th" data-col="0" style="display:none">Angajat</th>
               <th class="prod-th" data-col="1">Data</th>
-              <th class="prod-th" data-col="2">Workcenter</th>
-              <th class="prod-th" data-col="3">Produs</th>
-              <th class="prod-th" data-col="4">Cant.</th>
-              <th class="prod-th" data-col="5">Timp normat</th>
-              <th class="prod-th" data-col="6">Timp raportat</th>
-              <th class="prod-th" data-col="7">Eficiență</th>
+              <th class="prod-th" data-col="2">Employee No</th>
+              <th class="prod-th" data-col="3">Workcenter</th>
+              <th class="prod-th" data-col="4">Produs</th>
+              <th class="prod-th" data-col="5">Cant.</th>
+              <th class="prod-th" data-col="6">Timp normat</th>
+              <th class="prod-th" data-col="7">Timp raportat</th>
+              <th class="prod-th" data-col="8">Eficiență</th>
             </tr></thead>
             <tbody id="prod-tbody"></tbody>
           </table></div>
@@ -3933,19 +3930,14 @@ async function diagProductieBD(){
     }
 
     // Interoghează productie_evenimente după employee_no='70000413' (independent de angajat_id)
-    let q=sb.from('productie_Evenimente')
-      .select('id,event,transaction_dt,product,op_no,workcenter_name,manufact_qty,employee_no,employee_name,angajat_id')
-      .eq('employee_no','70000413')
-      .gte('transaction_dt','20260901')
-      .lte('transaction_dt','20260930')
-      .order('transaction_dt',{ascending:true});
+    // Schema reală: event_id (nu event), fără op_no/employee_name
+    const PROD_SEL='id,event_id,transaction_dt,product,product_desc,workcenter,workcenter_name,manufact_qty,employee_no,angajat_id';
 
-    // Dacă angajat_id există, interoghează și după el (union logic via OR)
     const angIds=angajati.map(a=>a.id);
-    let qById=null;
+    let qById=[];
     if(angIds.length>0){
       const {data:rowsById}=await sb.from('productie_evenimente')
-        .select('id,event,transaction_dt,product,op_no,workcenter_name,manufact_qty,employee_no,employee_name,angajat_id')
+        .select(PROD_SEL)
         .in('angajat_id',angIds)
         .gte('transaction_dt','20260901')
         .lte('transaction_dt','20260930');
@@ -3953,7 +3945,7 @@ async function diagProductieBD(){
     }
 
     const {data:rowsByNo,error}=await sb.from('productie_evenimente')
-      .select('id,event,transaction_dt,product,op_no,workcenter_name,manufact_qty,employee_no,employee_name,angajat_id')
+      .select(PROD_SEL)
       .eq('employee_no','70000413')
       .gte('transaction_dt','20260901')
       .lte('transaction_dt','20260930')
@@ -3967,25 +3959,21 @@ async function diagProductieBD(){
     (qById||[]).forEach(r=>allRowsMap.set(r.id,r));
     const rows=[...allRowsMap.values()].sort((a,b)=>(a.transaction_dt||'').localeCompare(b.transaction_dt||''));
 
-    // Distribuție employee_name în BD
-    const nameCount={};
-    rows.forEach(r=>{ const n=r.employee_name||r.employee_no||'?'; nameCount[n]=(nameCount[n]||0)+1; });
-    lines.push(`\n🏷️ Nume/no în productie_evenimente: ${Object.entries(nameCount).map(([n,c])=>n+' ('+c+')').join(', ')}`);
-    lines.push(`   (query by employee_no='70000413': ${(rowsByNo||[]).length} | by angajat_id: ${(qById||[]).length})`);
+    lines.push(`\n🏷️ Rânduri găsite (query by employee_no='70000413': ${(rowsByNo||[]).length} | by angajat_id: ${(qById||[]).length})`);
 
     lines.push(`\n📊 Rânduri în BD (202609): ${rows.length}`);
     lines.push(`📄 Rânduri în Excel (202609): ${excelEventIds.length}`);
     lines.push(`📈 Diferență: ${rows.length - excelEventIds.length} rânduri extra în BD`);
 
-    // Mapăm event IDs din BD
-    const bdEvents=rows.map(r=>({event:String(r.event||r.id),dt:r.transaction_dt,product:r.product,op:r.op_no,wc:r.workcenter_name,qty:r.manufact_qty,ang_id:r.angajat_id,ang_no:r.employee_no}));
+    // Mapăm event_id din BD (coloana reală se numește event_id)
+    const bdEvents=rows.map(r=>({event:String(r.event_id||''),dt:r.transaction_dt,product:r.product,wc:r.workcenter_name||r.workcenter,qty:r.manufact_qty,ang_id:r.angajat_id,ang_no:r.employee_no}));
     const bdEventIds=new Set(bdEvents.map(e=>e.event));
 
     // Extra în BD față de Excel
     const extraInBD=bdEvents.filter(e=>!excelSet.has(e.event));
     lines.push(`\n🔴 Extra în BD (nu sunt în Excel): ${extraInBD.length}`);
     extraInBD.forEach(e=>{
-      lines.push(`  Event ${e.event} | ${e.dt} | ${e.product||'?'} op${e.op||'?'} | ${e.wc||'?'} | qty=${e.qty||0} | ang_id=${e.ang_id||'?'} | emp_no=${e.ang_no||'?'}`);
+      lines.push(`  event_id=${e.event} | ${e.dt} | ${e.product||'?'} | ${e.wc||'?'} | qty=${e.qty||0} | ang_id=${e.ang_id||'NULL'} | emp_no=${e.ang_no||'?'}`);
     });
 
     // Lipsesc din BD față de Excel
@@ -3993,12 +3981,12 @@ async function diagProductieBD(){
     lines.push(`\n🟡 Lipsesc din BD (sunt în Excel dar nu în BD): ${lipsescDinBD.length}`);
     if(lipsescDinBD.length) lines.push('  '+lipsescDinBD.join(', '));
 
-    // Verificare duplicate în BD
+    // Verificare duplicate în BD (event_id repetat)
     const evCount={};
     bdEvents.forEach(e=>{evCount[e.event]=(evCount[e.event]||0)+1;});
     const dups=Object.entries(evCount).filter(([,c])=>c>1);
-    lines.push(`\n🔁 Duplicate event ID în BD: ${dups.length}`);
-    dups.forEach(([ev,c])=>lines.push(`  Event ${ev} apare de ${c} ori`));
+    lines.push(`\n🔁 Duplicate event_id în BD: ${dups.length}`);
+    dups.forEach(([ev,c])=>lines.push(`  event_id=${ev} apare de ${c} ori`));
 
     // Distribuție pe zile în BD
     lines.push('\n📅 Distribuție pe zile în BD:');
@@ -4033,6 +4021,7 @@ async function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataSta
     return `<tr>
       ${isAd?`<td class="admin-only">${ang?angNume(ang):(r.employee_no||'—')}</td>`:''}
       <td data-sort="${r.transaction_dt||''}">${fmtDate(r.transaction_dt)}</td>
+      <td style="font-family:monospace;font-size:12px;color:var(--text2)">${r.employee_no||'—'}</td>
       <td>${r.workcenter_name||r.workcenter||'—'}</td>
       <td><div style="font-weight:500">${r.product||'—'}</div><div style="font-size:11px;color:var(--text3)">${r.product_desc||''}</div></td>
       <td data-sort="${r.manufact_qty||0}">${r.manufact_qty||0}</td>
@@ -4040,7 +4029,7 @@ async function renderProductieTable(rows,angajatFiltrat,totalOrePontateH,dataSta
       <td data-sort="${timpRaportat}">${fmtMinutes(timpRaportat)}</td>
       <td data-sort="${eficienta!=null?eficienta.toFixed(2):'-1'}" style="font-weight:700;color:${effColor}">${eficienta!=null?eficienta.toFixed(0)+'%':'—'}</td>
     </tr>`;
-  }).join(''):`<tr><td colspan="${isAd?8:7}" style="text-align:center;color:var(--text3);padding:1.5rem">Nicio înregistrare găsită pentru perioada selectată.</td></tr>`;
+  }).join(''):`<tr><td colspan="${isAd?9:8}" style="text-align:center;color:var(--text3);padding:1.5rem">Nicio înregistrare găsită pentru perioada selectată.</td></tr>`;
 
   // Distribuim timpul pontat (din tabela pontaj, pe zile) în aceeași structură perZi
   // Din fiecare zi de pontaj scădem 20 min pauza de masă → timp efectiv disponibil producție
