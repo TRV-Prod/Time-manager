@@ -3387,6 +3387,51 @@ function exportNegasitePDF(){
 }
 
 function exportProductiePDF(){
+  // Dialog de opțiuni înainte de export
+  const dlgId='pdf-opt-dlg';
+  if(document.getElementById(dlgId)) document.getElementById(dlgId).remove();
+  const dlg=document.createElement('div');
+  dlg.id=dlgId;
+  dlg.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  dlg.innerHTML=`
+    <div style="background:#fff;border-radius:12px;padding:28px 32px;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <h3 style="margin:0 0 6px;font-size:16px;color:#1a2744">Export PDF — Raport eficiență</h3>
+      <p style="margin:0 0 20px;font-size:13px;color:#6b7fa3">Alege ce secțiuni să includă PDF-ul:</p>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:24px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:2px solid #e2e8f0;border-radius:8px;transition:border-color .15s"
+          onmouseenter="this.style.borderColor='#e8610a'" onmouseleave="this.style.borderColor=document.getElementById('pdf-opt-chart').checked?'#e8610a':'#e2e8f0'">
+          <input type="checkbox" id="pdf-opt-chart" checked style="width:16px;height:16px;accent-color:#e8610a"
+            onchange="this.closest('label').style.borderColor=this.checked?'#e8610a':'#e2e8f0'"/>
+          <span>
+            <span style="font-weight:600;font-size:13px;display:block">📈 Grafic Linie — evoluție zilnică</span>
+            <span style="font-size:11px;color:#94a3b8">Timp pontat, raportat și normat pe zile</span>
+          </span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:2px solid #e2e8f0;border-radius:8px;transition:border-color .15s"
+          onmouseenter="this.style.borderColor='#e8610a'" onmouseleave="this.style.borderColor=document.getElementById('pdf-opt-table').checked?'#e8610a':'#e2e8f0'">
+          <input type="checkbox" id="pdf-opt-table" checked style="width:16px;height:16px;accent-color:#e8610a"
+            onchange="this.closest('label').style.borderColor=this.checked?'#e8610a':'#e2e8f0'"/>
+          <span>
+            <span style="font-weight:600;font-size:13px;display:block">📋 Tabel realizări</span>
+            <span style="font-size:11px;color:#94a3b8">Detalii operații: cantitate, timpi, eficiență</span>
+          </span>
+        </label>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button onclick="document.getElementById('${dlgId}').remove()" style="padding:8px 18px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;cursor:pointer;font-size:13px">Anulează</button>
+        <button onclick="exportProductiePDFGenereaza(document.getElementById('pdf-opt-chart').checked,document.getElementById('pdf-opt-table').checked);document.getElementById('${dlgId}').remove()"
+          style="padding:8px 20px;border:none;border-radius:8px;background:#e8610a;color:#fff;cursor:pointer;font-weight:600;font-size:13px">Export PDF</button>
+      </div>
+    </div>`;
+  // Marcăm starea inițială a bordurii checkbox-urilor
+  document.body.appendChild(dlg);
+  ['pdf-opt-chart','pdf-opt-table'].forEach(id=>{
+    const inp=document.getElementById(id);
+    if(inp) inp.closest('label').style.borderColor='#e8610a';
+  });
+}
+
+function exportProductiePDFGenereaza(includeChart,includeTable){
   const angSel=document.getElementById('prod-angajat-sel')?.value||'';
   const angajat=allAngajati.find(a=>a.id===angSel)||(!isAdmin()?allAngajati.find(a=>a.id===currentProfile?.angajat_id):null);
   const titlu=angajat
@@ -3398,13 +3443,45 @@ function exportProductiePDF(){
 
   const rezumat=document.getElementById('prod-rezumat')?.innerHTML||'';
   const summary=document.getElementById('prod-summary')?.innerHTML||'';
-  const tbody=document.getElementById('prod-tbody')?.innerHTML||'';
-  const theadRow=document.querySelector('#page-productie thead tr')?.innerHTML||'';
-  // Curățăm elementele cu display:none din rezumat (nu putem folosi regex /s în template literal)
   const rezumatCurat=rezumat.replace(/style="[^"]*display:none[^"]*"/g,'style="display:none"').replace(/<[^>]+style="display:none"[^>]*>[^<]*<\/[^>]+>/g,'');
 
-  const printWin=window.open('','_blank');
-  printWin.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titlu}</title>
+  // Extragem imaginea graficului Linie (forțăm tipul linie dacă nu e deja selectat)
+  let chartImgHtml='';
+  if(includeChart){
+    // Dacă graficul curent nu e linie, generăm temporar unul linie pentru captură
+    const tipSel=document.getElementById('prod-chart-tip');
+    const tipOriginal=tipSel?.value||'linie';
+    if(tipOriginal!=='linie'&&tipSel){
+      tipSel.value='linie';
+      renderProductieChart();
+    }
+    const canvas=document.getElementById('prod-chart-canvas');
+    if(canvas&&prodChartInstance){
+      try{
+        const img=canvas.toDataURL('image/png');
+        chartImgHtml=`<div style="margin-bottom:14px">
+          <div style="font-size:11px;font-weight:700;color:#6b7fa3;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Evoluție zilnică — Timpi (minute)</div>
+          <img src="${img}" style="width:100%;border:1px solid #e2e8f0;border-radius:6px"/>
+        </div>`;
+      }catch(e){}
+    }
+    // Restaurăm tipul original dacă l-am schimbat
+    if(tipOriginal!=='linie'&&tipSel){
+      tipSel.value=tipOriginal;
+      renderProductieChart();
+    }
+  }
+
+  // Tabel realizări
+  let tabelHtml='';
+  if(includeTable){
+    const tbody=document.getElementById('prod-tbody')?.innerHTML||'';
+    const theadRow=document.querySelector('#page-productie thead tr')?.innerHTML||'';
+    tabelHtml=`<div style="font-size:11px;font-weight:700;color:#6b7fa3;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;margin-top:${includeChart?'4px':'0'}">Realizări detaliate</div>
+      <table><thead><tr>${theadRow}</tr></thead><tbody>${tbody}</tbody></table>`;
+  }
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titlu}</title>
   <style>
     @page{size:A4 portrait;margin:12mm}
     *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
@@ -3426,10 +3503,16 @@ function exportProductiePDF(){
     <div class="sub">Perioada: ${perioadaTxt} · Generat: ${new Date().toLocaleString('ro-RO')}</div>
     <div class="rezumat">${rezumatCurat}</div>
     <div class="grid">${summary}</div>
-    <table><thead><tr>${theadRow}</tr></thead><tbody>${tbody}</tbody></table>
-    <script>window.onload=()=>setTimeout(()=>window.print(),200)<\/script>
-  </body></html>`);
-  printWin.document.close();
+    ${chartImgHtml}
+    ${tabelHtml}
+    <script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script>
+  </body></html>`;
+
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const win=window.open(url,'_blank');
+  if(win) setTimeout(()=>URL.revokeObjectURL(url),60000);
+  else { const a=document.createElement('a');a.href=url;a.download='raport-eficienta.html';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000); }
 }
 
 async function initProductie(){
